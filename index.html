@@ -1049,7 +1049,7 @@
     <span class="brand-logo" aria-hidden="true">TT</span>
     <span>
       <span class="brand-title">TaskTec</span>
-      <span class="brand-sub">Ciclo 6 · Diseño y Desarrollo de Software</span>
+      <span class="brand-sub" id="brandSub">Ciclo 6 · Diseño y Desarrollo de Software</span>
     </span>
   </div>
   <span class="header-chip" id="headerCampus"><svg class="icon icon-lead" aria-hidden="true" focusable="false"><use href="#icon-pin"></use></svg><span id="headerCampusText">Sede sin definir</span></span>
@@ -1165,35 +1165,104 @@
   var STORAGE_KEY = "tasktec:v1";
   var DEFAULT_THEORY_WEEKS = [4, 8, 12, 16];
 
+  // Tecsup-only academic constants. The 18-week structure is institutional and
+  // shared by every cycle; it is never derived from the user.
   var CYCLE = {
-    number: 6,
-    program: "Diseño y Desarrollo de Software",
     totalWeeks: 18,
     classWeeks: 16,
     finalWeeks: [17, 18],
-    campusOptions: ["Lima", "Arequipa", "Trujillo"],
-    courseUnits: [
-      { id: "u1", name: "Consultoría y Desarrollo Profesional", track: "employability" },
-      { id: "u2", name: "Emprendimiento", track: "employability" },
-      { id: "u3", name: "Sociedad y Desarrollo Sostenible", track: "employability" },
-      { id: "u4", name: "Gestión de Servicios de Software", track: "specific" },
-      { id: "u5", name: "Integración de Sistemas Empresariales Avanzado", track: "specific" },
-      { id: "u6", name: "Desarrollo de Aplicaciones Empresariales Avanzado", track: "specific" },
-      { id: "u7", name: "Startup Venture Project", track: "specific" },
-      { id: "u8", name: "Inteligencia de Negocios", track: "specific" }
-    ]
+    campusOptions: ["Lima", "Arequipa", "Trujillo"]
   };
+
+  var TRACK_ORDER = ["employability", "specific"];
 
   var TRACK_LABELS = {
     employability: "Competencias para la Empleabilidad",
     specific: "Competencias Específicas"
   };
 
+  // Verified curriculum registry. Only curricula confirmed from Tecsup sources
+  // live here, so adding a program later is a data-only change. Each cycle lists
+  // its didactic units per competency block. Unit ids are derived at read time
+  // (cycle-scoped: "c<cycle>-u<n>") and never stored, keeping a single source of
+  // truth for the active cycle.
+  var DEFAULT_PROGRAM_ID = "dds";
+  var DEFAULT_CYCLE_NUMBER = 6;
+  var LEGACY_UNIT_CYCLE = 6; // Pre-registry ids ("u1".."u8") belong to cycle 6.
+
+  var PROGRAMS = {
+    dds: {
+      id: "dds",
+      name: "Diseño y Desarrollo de Software",
+      cycles: {
+        1: {
+          employability: ["Técnicas de Expresión Oral y Escrita", "Cálculo y Estadística", "Desarrollo Personal"],
+          specific: ["Ciencias Básicas Aplicadas", "Diseño de Interfaces de Programación", "Fundamentos de Programación"]
+        },
+        2: {
+          employability: ["Comprensión y Producción de Textos", "Aplicaciones del Cálculo y Estadística"],
+          specific: ["Investigación de Mercado", "Programación Orientada a Objetos", "Base de Datos", "Arquitectura de Computadoras", "Informática Aplicada en TI"]
+        },
+        3: {
+          employability: ["Mejora Continua en el Diseño"],
+          specific: ["Ingeniería de Requerimientos y Diseño de Software", "Estructuras de Datos y Algoritmos", "Desarrollo de Aplicaciones en Internet", "Base de Datos Avanzado", "Sistemas Operativos"]
+        },
+        4: {
+          employability: ["Investigación e Innovación Tecnológica"],
+          specific: ["Construcción y Pruebas de Software", "Tecnologías Emergentes", "Desarrollo de Aplicaciones Empresariales", "Desarrollo de Aplicaciones Web", "Programación en Móviles"]
+        },
+        5: {
+          employability: ["Diseño de Proyectos de Innovación"],
+          specific: ["Aplicaciones Móviles Multiplataforma", "Integración de Sistemas Empresariales", "Marketing y Comercialización de Nuevos Productos", "Desarrollo de Aplicaciones Web Avanzado", "Programación en Móviles Avanzado", "Desarrollo de Soluciones en la Nube"]
+        },
+        6: {
+          employability: ["Consultoría y Desarrollo Profesional", "Emprendimiento", "Sociedad y Desarrollo Sostenible"],
+          specific: ["Gestión de Servicios de Software", "Integración de Sistemas Empresariales Avanzado", "Desarrollo de Aplicaciones Empresariales Avanzado", "Startup Venture Project", "Inteligencia de Negocios"]
+        }
+      }
+    }
+  };
+
   var MAX_ATTEMPTS = 3;
   var MS_PER_DAY = 86400000;
 
+  function getActiveProgram() {
+    return PROGRAMS[state.programId] || null;
+  }
+
+  function programCycles(program) {
+    if (!program) return [];
+    return Object.keys(program.cycles)
+      .map(function (key) { return parseInt(key, 10); })
+      .sort(function (a, b) { return a - b; });
+  }
+
+  // Build the unit list for a program/cycle on demand. Ids are cycle-scoped and
+  // deterministic, so deadlines and Canvas entries keep resolving across reloads.
+  function deriveUnits(programId, cycleNumber) {
+    var program = PROGRAMS[programId];
+    if (!program) return [];
+    var cycle = program.cycles[cycleNumber];
+    if (!cycle) return [];
+    var units = [];
+    var index = 0;
+    TRACK_ORDER.forEach(function (track) {
+      (cycle[track] || []).forEach(function (name) {
+        index += 1;
+        units.push({ id: "c" + cycleNumber + "-u" + index, name: name, track: track });
+      });
+    });
+    return units;
+  }
+
+  function activeUnits() {
+    return deriveUnits(state.programId, state.cycleNumber);
+  }
+
   function defaultState() {
     return {
+      programId: DEFAULT_PROGRAM_ID,
+      cycleNumber: DEFAULT_CYCLE_NUMBER,
       campus: null,
       startDate: null, // ISO "YYYY-MM-DD" — configured by the user, never hardcoded
       theoryAssessmentWeeks: DEFAULT_THEORY_WEEKS.slice(),
@@ -1237,21 +1306,36 @@
     if (parsed.theme === "dark" || parsed.theme === "light") {
       state.theme = parsed.theme;
     }
+    if (typeof parsed.programId === "string" && PROGRAMS[parsed.programId]) {
+      state.programId = parsed.programId;
+    }
+    var loadedCycle = parseInt(parsed.cycleNumber, 10);
+    if (isFinite(loadedCycle) && PROGRAMS[state.programId].cycles[loadedCycle]) {
+      state.cycleNumber = loadedCycle;
+    }
     if (Array.isArray(parsed.deadlines)) {
+      var units = activeUnits();
+      var fallbackUnitId = units.length > 0 ? units[0].id : null;
       state.deadlines = parsed.deadlines.filter(isValidDeadline).map(function (d) {
+        var unitId = migrateLegacyUnitId(String(d.unitId));
+        if (!unitExists(unitId)) unitId = fallbackUnitId;
         return {
           id: String(d.id),
-          unitId: unitExists(d.unitId) ? d.unitId : CYCLE.courseUnits[0].id,
+          unitId: unitId,
           title: String(d.title),
           dueAt: d.dueAt,
           status: d.status === "submitted" ? "submitted" : "pending",
           weight: typeof d.weight === "number" && isFinite(d.weight) ? d.weight : null
         };
-      });
+      }).filter(function (d) { return d.unitId !== null; });
     }
     if (parsed.canvas && typeof parsed.canvas === "object") {
-      CYCLE.courseUnits.forEach(function (unit) {
-        var entry = parsed.canvas[unit.id];
+      var normalizedCanvas = {};
+      Object.keys(parsed.canvas).forEach(function (key) {
+        normalizedCanvas[migrateLegacyUnitId(key)] = parsed.canvas[key];
+      });
+      activeUnits().forEach(function (unit) {
+        var entry = normalizedCanvas[unit.id];
         if (!entry || typeof entry !== "object") return;
         var used = Number(entry.attemptsUsed);
         var score = entry.bestScore;
@@ -1261,6 +1345,10 @@
         };
       });
     }
+
+    // Persist the normalized shape immediately so migrated legacy ids are
+    // written back and the user's data never depends on a later action.
+    saveState();
   }
 
   function saveState() {
@@ -1279,7 +1367,16 @@
   }
 
   function unitExists(unitId) {
-    return CYCLE.courseUnits.some(function (unit) { return unit.id === unitId; });
+    return activeUnits().some(function (unit) { return unit.id === unitId; });
+  }
+
+  // Pre-registry ids were plain "u1".."u8" and all belong to cycle 6 of the only
+  // verified program. Map them forward so saved deadlines and Canvas entries survive.
+  function migrateLegacyUnitId(unitId) {
+    if (!/^u\d+$/.test(unitId)) return unitId;
+    var migrated = "c" + LEGACY_UNIT_CYCLE + "-" + unitId;
+    var legacyUnits = deriveUnits(DEFAULT_PROGRAM_ID, LEGACY_UNIT_CYCLE);
+    return legacyUnits.some(function (unit) { return unit.id === migrated; }) ? migrated : unitId;
   }
 
   function sanitizeWeeks(list) {
@@ -1485,8 +1582,9 @@
   }
 
   function getUnit(unitId) {
-    for (var i = 0; i < CYCLE.courseUnits.length; i++) {
-      if (CYCLE.courseUnits[i].id === unitId) return CYCLE.courseUnits[i];
+    var units = activeUnits();
+    for (var i = 0; i < units.length; i++) {
+      if (units[i].id === unitId) return units[i];
     }
     return null;
   }
@@ -1529,6 +1627,11 @@
   function renderHeader() {
     var campusEl = document.getElementById("headerCampusText");
     if (campusEl) campusEl.textContent = state.campus ? "Sede " + state.campus : "Sede sin definir";
+    var subEl = document.getElementById("brandSub");
+    if (subEl) {
+      var program = getActiveProgram();
+      subEl.textContent = "Ciclo " + state.cycleNumber + (program ? " · " + program.name : "");
+    }
   }
 
   function renderChip(text, tone, iconName) {
@@ -1627,6 +1730,7 @@
     clear(root);
     var now = new Date();
     var info = getWeekInfo();
+    var activeProgram = getActiveProgram();
 
     if (!info) {
       root.appendChild(emptyState(
@@ -1647,8 +1751,8 @@
     var progressPercent = Math.round((week / CYCLE.totalWeeks) * 100);
 
     var hero = el("section", { class: "card hero" }, [
-      el("div", { class: "hero-eyebrow", text: "Ciclo " + CYCLE.number }),
-      el("p", { class: "hero-program", text: CYCLE.program + (state.campus ? " · Sede " + state.campus : "") }),
+      el("div", { class: "hero-eyebrow", text: "Ciclo " + state.cycleNumber }),
+      el("p", { class: "hero-program", text: (activeProgram ? activeProgram.name : "Programa sin definir") + (state.campus ? " · Sede " + state.campus : "") }),
       el("div", { class: "week-row" }, [
         el("span", { class: "week-number", text: "Semana " + week }),
         el("span", { class: "week-caption", text: "de " + CYCLE.totalWeeks })
@@ -1709,7 +1813,7 @@
 
     root.appendChild(el("h2", { class: "section-title", text: "Línea de tiempo del ciclo" }));
     root.appendChild(renderTimeline(week));
-    root.appendChild(el("p", { class: "helper", text: "Las semanas de evaluación de teoría son configurables (valor por defecto 4, 8, 12 y 16). No están confirmadas para el ciclo 6." }));
+    root.appendChild(el("p", { class: "helper", text: "Las semanas de evaluación de teoría son configurables (valor por defecto 4, 8, 12 y 16). No están confirmadas para todos los ciclos." }));
   }
 
   function renderMilestoneCard(now) {
@@ -1898,10 +2002,12 @@
     var root = document.getElementById("screen-units");
     clear(root);
 
-    root.appendChild(el("h2", { class: "section-title", text: "Tus 8 unidades didácticas" }));
+    var allUnits = activeUnits();
+    root.appendChild(el("h2", { class: "section-title", text: "Tus " + allUnits.length + " unidades didácticas" }));
 
-    ["employability", "specific"].forEach(function (track) {
-      var units = CYCLE.courseUnits.filter(function (unit) { return unit.track === track; });
+    TRACK_ORDER.forEach(function (track) {
+      var units = allUnits.filter(function (unit) { return unit.track === track; });
+      if (units.length === 0) return;
 
       var heading = el("div", { class: "block-heading" }, [
         el("span", { class: "block-title", text: TRACK_LABELS[track] }),
@@ -1957,6 +2063,40 @@
     clear(root);
 
     root.appendChild(el("h2", { class: "section-title", text: "Configuración del ciclo" }));
+
+    // --- Carrera / programa y ciclo (malla verificada) ---
+    var programCard = el("section", { class: "card" });
+    var programSelect = el("select", {
+      class: "select", id: "settingProgram",
+      on: { change: function (event) { handleProgramChange(event.target.value); } }
+    });
+    Object.keys(PROGRAMS).forEach(function (programId) {
+      var option = el("option", { value: programId, text: PROGRAMS[programId].name });
+      if (state.programId === programId) option.selected = true;
+      programSelect.appendChild(option);
+    });
+    programCard.appendChild(el("div", { class: "field" }, [
+      el("label", { for: "settingProgram" }, [icon("units", "icon-lead"), "Carrera / Programa"]),
+      programSelect,
+      el("p", { class: "helper", text: "Solo se cargan las mallas verificadas. Hoy: Diseño y Desarrollo de Software." })
+    ]));
+
+    var activeProgram = getActiveProgram();
+    var cycleSelect = el("select", {
+      class: "select", id: "settingCycle",
+      on: { change: function (event) { handleCycleChange(parseInt(event.target.value, 10)); } }
+    });
+    programCycles(activeProgram).forEach(function (cycleNumber) {
+      var option = el("option", { value: String(cycleNumber), text: "Ciclo " + cycleNumber });
+      if (state.cycleNumber === cycleNumber) option.selected = true;
+      cycleSelect.appendChild(option);
+    });
+    programCard.appendChild(el("div", { class: "field", style: "margin-bottom: 0;" }, [
+      el("label", { for: "settingCycle" }, [icon("cycle", "icon-lead"), "Ciclo"]),
+      cycleSelect,
+      el("p", { class: "helper", text: "Cambia de ciclo y TaskTec carga las unidades didácticas reales de esa malla." })
+    ]));
+    root.appendChild(programCard);
 
     // --- Cycle start date (the critical field) ---
     var startCard = el("section", { class: "card" });
@@ -2031,7 +2171,7 @@
           }
         }
       }),
-      el("p", { class: "helper", text: "Semanas entre 1 y 16, separadas por comas. El ritmo \"cada 4 semanas\" se observó en Cálculo y Estadística (ciclos 1-2) y NO está confirmado para el ciclo 6: revísalo en tus sílabos y ajústalo aquí." })
+      el("p", { class: "helper", text: "Semanas entre 1 y 16, separadas por comas. El ritmo \"cada 4 semanas\" se observó en Cálculo y Estadística (ciclos 1-2) y NO está confirmado para todos los ciclos: revísalo en tus sílabos y ajústalo aquí." })
     ]));
     root.appendChild(weeksCard);
 
@@ -2063,7 +2203,7 @@
     // --- About / honesty ---
     root.appendChild(el("section", { class: "card" }, [
       el("span", { class: "field-label", text: "Sobre los datos" }),
-      el("p", { class: "helper", text: "Ciclo de 18 semanas: 16 de clases y 2 de evaluaciones finales (Reglamento Institucional de Tecsup, Art. 37). Las 8 unidades didácticas son la malla real del ciclo 6. Lo que no se pudo verificar (fecha de inicio y ritmo de evaluaciones) se configura, no se asume." })
+      el("p", { class: "helper", text: "Ciclo de 18 semanas: 16 de clases y 2 de evaluaciones finales (Reglamento Institucional de Tecsup, Art. 37). Las unidades didácticas se cargan de la malla verificada del ciclo que elijas. Lo que no se pudo verificar (fecha de inicio y ritmo de evaluaciones) se configura, no se asume." })
     ]));
 
     // --- Reset ---
@@ -2218,7 +2358,8 @@
 
     var unitSelect = document.getElementById("fieldUnit");
     clear(unitSelect);
-    CYCLE.courseUnits.forEach(function (unit) {
+    var units = activeUnits();
+    units.forEach(function (unit) {
       unitSelect.appendChild(el("option", { value: unit.id, text: unit.name }));
     });
 
@@ -2242,7 +2383,7 @@
     } else {
       titleEl.textContent = "Nueva entrega";
       submitEl.textContent = "Guardar entrega";
-      document.getElementById("fieldUnit").value = presetUnitId || CYCLE.courseUnits[0].id;
+      document.getElementById("fieldUnit").value = presetUnitId || (units[0] ? units[0].id : "");
       var today = new Date();
       document.getElementById("fieldDate").value = toDateInputValue(today);
       document.getElementById("fieldTime").value = "23:59";
@@ -2371,6 +2512,54 @@
   /* =========================================================
      Settings actions
      ========================================================= */
+  function handleProgramChange(programId) {
+    var program = PROGRAMS[programId];
+    if (!program) { renderSettings(); return; }
+    var cycleNumber = program.cycles[state.cycleNumber] ? state.cycleNumber : programCycles(program)[0];
+    applyCycleContext(programId, cycleNumber);
+  }
+
+  function handleCycleChange(cycleNumber) {
+    applyCycleContext(state.programId, cycleNumber);
+  }
+
+  // Apply a new program/cycle. If the change would orphan saved deadlines, warn
+  // first and only proceed on explicit confirmation. Declining leaves state
+  // untouched, and renderSettings() rebuilds the selects from that state, so the
+  // controls revert visually. On confirmation the orphaned deadlines and their
+  // Canvas entries are removed (invisible data is worse than an explicit delete).
+  function applyCycleContext(programId, cycleNumber) {
+    var program = PROGRAMS[programId];
+    if (!program || !program.cycles[cycleNumber]) { renderSettings(); return; }
+    if (programId === state.programId && cycleNumber === state.cycleNumber) return;
+
+    var nextUnits = deriveUnits(programId, cycleNumber);
+    var nextIds = {};
+    nextUnits.forEach(function (unit) { nextIds[unit.id] = true; });
+
+    var orphaned = state.deadlines.filter(function (d) { return !nextIds[d.unitId]; });
+    if (orphaned.length > 0) {
+      var message = "Este cambio deja " + orphaned.length +
+        (orphaned.length === 1 ? " entrega sin unidad válida" : " entregas sin unidad válida") +
+        " en la malla nueva. Se eliminarán de forma permanente si continúas. ¿Continuar?";
+      if (!window.confirm(message)) {
+        renderSettings();
+        return;
+      }
+      state.deadlines = state.deadlines.filter(function (d) { return nextIds[d.unitId]; });
+      Object.keys(state.canvas).forEach(function (unitId) {
+        if (!nextIds[unitId]) delete state.canvas[unitId];
+      });
+    }
+
+    state.programId = programId;
+    state.cycleNumber = cycleNumber;
+    saveState();
+    renderHeader();
+    renderSettings();
+    renderDashboard();
+  }
+
   function resetAllData() {
     if (!window.confirm("Se borrarán todas tus entregas, intentos de Canvas y configuración. ¿Continuar?")) return;
     try {
