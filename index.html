@@ -1935,6 +1935,7 @@
 
   var MAX_ATTEMPTS = 3;
   var MS_PER_DAY = 86400000;
+  var NOTIFY_THRESHOLD_MS = 24 * 3600000;
 
   function getActiveProgram() {
     return PROGRAMS[state.programId] || null;
@@ -1978,7 +1979,9 @@
       theoryAssessmentWeeks: DEFAULT_THEORY_WEEKS.slice(),
       theme: "light",
       deadlines: [],
-      canvas: {} // unitId -> { attemptsUsed: 0..3, bestScore: number|null }
+      canvas: {}, // unitId -> { attemptsUsed: 0..3, bestScore: number|null }
+      notifyEnabled: false, // ask before a deadline crosses the 24 h threshold
+      notified: {} // deadlineId -> dueAt already notified, so it never repeats
     };
   }
 
@@ -2057,6 +2060,17 @@
           bestScore: typeof score === "number" && isFinite(score) ? score : null
         };
       });
+    }
+
+    if (parsed.notifyEnabled === true) {
+      state.notifyEnabled = true;
+    }
+    if (parsed.notified && typeof parsed.notified === "object") {
+      var restoredNotified = {};
+      Object.keys(parsed.notified).forEach(function (key) {
+        if (typeof parsed.notified[key] === "string") restoredNotified[key] = parsed.notified[key];
+      });
+      state.notified = restoredNotified;
     }
 
     // Persist the normalized shape immediately so migrated legacy ids are
@@ -2325,6 +2339,176 @@
     return getSortedDeadlines().filter(function (d) {
       return d.status === "pending";
     }).slice(0, limit);
+  }
+
+  /* =========================================================
+     PWA shell — injected only over http(s)
+     ========================================================= */
+  function pwaHeadAllowed() {
+    return location.protocol === "http:" || location.protocol === "https:";
+  }
+
+  // Inject the manifest, icon links and web-app meta tags from JavaScript so the
+  // raw HTML keeps zero external tags and stays fully functional on file://.
+  function injectPwaHead() {
+    if (!pwaHeadAllowed()) return;
+    try {
+      var head = document.head;
+
+      var manifest = document.createElement("link");
+      manifest.setAttribute("rel", "manifest");
+      manifest.setAttribute("href", "./manifest.webmanifest");
+      head.appendChild(manifest);
+
+      var appleIcon = document.createElement("link");
+      appleIcon.setAttribute("rel", "apple-touch-icon");
+      appleIcon.setAttribute("href", "./icons/apple-touch-icon.png");
+      head.appendChild(appleIcon);
+
+      var favicon = document.createElement("link");
+      favicon.setAttribute("rel", "icon");
+      favicon.setAttribute("type", "image/png");
+      favicon.setAttribute("sizes", "32x32");
+      favicon.setAttribute("href", "./icons/favicon-32.png");
+      head.appendChild(favicon);
+
+      var themeColor = document.createElement("meta");
+      themeColor.setAttribute("name", "theme-color");
+      themeColor.setAttribute("content", "#2f6df6");
+      head.appendChild(themeColor);
+
+      var appleCapable = document.createElement("meta");
+      appleCapable.setAttribute("name", "apple-mobile-web-app-capable");
+      appleCapable.setAttribute("content", "yes");
+      head.appendChild(appleCapable);
+
+      var appleStatusBar = document.createElement("meta");
+      appleStatusBar.setAttribute("name", "apple-mobile-web-app-status-bar-style");
+      appleStatusBar.setAttribute("content", "default");
+      head.appendChild(appleStatusBar);
+    } catch (error) {
+      // A missing head must never break the app.
+    }
+  }
+
+  var swRegistration = null;
+
+  // Register the service worker only over http(s). Any failure (file://, private
+  // mode, unsupported browser) is swallowed: the app works without it.
+  function registerServiceWorker() {
+    if (!pwaHeadAllowed()) return;
+    if (!("serviceWorker" in navigator)) return;
+    try {
+      navigator.serviceWorker.register("./sw.js").then(function (registration) {
+        swRegistration = registration;
+      }).catch(function () {
+        // Registration failed silently; the app stays fully functional.
+      });
+    } catch (error) {
+      // Some browsers throw synchronously on unsupported contexts.
+    }
+  }
+
+  /* =========================================================
+     Notifications — in-app only, no backend
+     ========================================================= */
+  function notificationSupported() {
+    return "Notification" in window;
+  }
+
+  function notificationPermission() {
+    if (!notificationSupported()) return "unsupported";
+    return Notification.permission; // "default" | "granted" | "denied"
+  }
+
+  function requestNotificationPermission() {
+    if (!notificationSupported()) return;
+    try {
+      var result = Notification.requestPermission(function () {
+        renderSettings();
+      });
+      if (result && typeof result.then === "function") {
+        result.then(function () { renderSettings(); });
+      }
+    } catch (error) {
+      renderSettings();
+    }
+  }
+
+  function isDeadlineNotified(deadlineId, dueAt) {
+    return !!state.notified && state.notified[deadlineId] === dueAt;
+  }
+
+  function markDeadlineNotified(deadlineId, dueAt) {
+    if (!state.notified) state.notified = {};
+    state.notified[deadlineId] = dueAt;
+  }
+
+  function clearDeadlineNotified(deadlineId) {
+    if (state.notified && state.notified[deadlineId] !== undefined) {
+      delete state.notified[deadlineId];
+    }
+  }
+
+  function showDeadlineNotification(deadline, now) {
+    var unit = getUnit(deadline.unitId);
+    var unitName = unit ? unit.name : "Unidad desconocida";
+    var options = {
+      body: unitName + " · " + countdownLabel(deadline.dueAt, now),
+      tag: "tasktec-deadline-" + deadline.id,
+      icon: "./icons/icon-192.png",
+      badge: "./icons/favicon-32.png"
+    };
+    try {
+      if (swRegistration && typeof swRegistration.showNotification === "function") {
+        swRegistration.showNotification(deadline.title, options);
+      } else {
+        new Notification(deadline.title, options);
+      }
+    } catch (error) {
+      // A notification failure must never surface as a broken UI.
+    }
+  }
+
+  // Notify each pending deadline that just crossed the 24 h threshold, once. The
+  // record lives in localStorage (state.notified) so it never repeats, and it is
+  // cleared when the deadline is edited or deleted.
+  function checkDeadlineNotifications() {
+    if (!notificationSupported()) return;
+    if (Notification.permission !== "granted") return;
+    if (!state.notifyEnabled) return;
+
+    var now = new Date();
+    var nowMs = now.getTime();
+    var changed = false;
+
+    state.deadlines.forEach(function (deadline) {
+      if (deadline.status !== "pending") return;
+      var dueMs = new Date(deadline.dueAt).getTime();
+      if (!isFinite(dueMs)) return;
+      var diff = dueMs - nowMs;
+      if (diff <= 0 || diff > NOTIFY_THRESHOLD_MS) return;
+      if (isDeadlineNotified(deadline.id, deadline.dueAt)) return;
+      markDeadlineNotified(deadline.id, deadline.dueAt);
+      changed = true;
+      showDeadlineNotification(deadline, now);
+    });
+
+    if (changed) saveState();
+  }
+
+  var notificationTimer = null;
+
+  function startNotificationWatcher() {
+    checkDeadlineNotifications();
+    if (notificationTimer !== null) window.clearInterval(notificationTimer);
+    notificationTimer = window.setInterval(function () {
+      if (document.visibilityState === "hidden") return;
+      checkDeadlineNotifications();
+    }, 60000);
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "visible") checkDeadlineNotifications();
+    });
   }
 
   /* =========================================================
@@ -2913,6 +3097,62 @@
     themeCard.appendChild(segmented);
     root.appendChild(themeCard);
 
+    // --- Notifications ---
+    var notifyCard = el("section", { class: "card" });
+    notifyCard.appendChild(el("span", { class: "field-label" }, [icon("alert", "icon-lead"), "Notificaciones"]));
+
+    if (!notificationSupported()) {
+      notifyCard.appendChild(el("p", { class: "helper", text: "Este navegador no expone notificaciones, así que TaskTec no puede avisarte desde aquí. Todo lo demás funciona igual." }));
+    } else {
+      var permission = notificationPermission();
+
+      if (permission === "granted") {
+        notifyCard.appendChild(el("div", { class: "row" }, [
+          renderChip("Permiso concedido", "success", "check")
+        ]));
+      } else if (permission === "denied") {
+        notifyCard.appendChild(el("div", { class: "row" }, [
+          renderChip("Permiso bloqueado", "danger", "alert")
+        ]));
+        notifyCard.appendChild(el("p", { class: "helper", text: "Bloqueaste las notificaciones para este sitio y el navegador ya no volverá a preguntar. Para activarlas, cámbialo en los ajustes de notificaciones del navegador para este sitio." }));
+      } else {
+        notifyCard.appendChild(el("p", { class: "helper", text: "El navegador todavía no pidió permiso. Actívalo para que TaskTec pueda avisarte." }));
+        notifyCard.appendChild(el("button", {
+          type: "button", class: "btn btn-primary btn-block",
+          on: { click: requestNotificationPermission }
+        }, [
+          icon("alert"),
+          "Activar notificaciones"
+        ]));
+      }
+
+      notifyCard.appendChild(el("p", { class: "helper", text: "Sin un servidor, TaskTec solo puede avisarte mientras la app está abierta (o instalada y en ejecución). No puede despertar un navegador cerrado." }));
+
+      var notifySegmented = el("div", { class: "segmented", role: "group", "aria-label": "Avisar cuando falten menos de 24 horas" });
+      [[true, "Activado"], [false, "Desactivado"]].forEach(function (pair) {
+        notifySegmented.appendChild(el("button", {
+          type: "button",
+          class: state.notifyEnabled === pair[0] ? "active" : "",
+          "aria-pressed": state.notifyEnabled === pair[0] ? "true" : "false",
+          on: {
+            click: function () {
+              state.notifyEnabled = pair[0];
+              saveState();
+              renderSettings();
+              checkDeadlineNotifications();
+            }
+          }
+        }, [
+          icon(pair[0] ? "check" : "close", "icon-lead"),
+          pair[1]
+        ]));
+      });
+      notifyCard.appendChild(el("span", { class: "field-label", text: "Avisar cuando falten menos de 24 h" }));
+      notifyCard.appendChild(notifySegmented);
+    }
+
+    root.appendChild(notifyCard);
+
     // --- About / honesty ---
     root.appendChild(el("section", { class: "card" }, [
       el("span", { class: "field-label", text: "Sobre los datos" }),
@@ -3175,6 +3415,8 @@
           deadline.status = formStatus;
         }
       });
+      // Editing a deadline re-arms its notification if it becomes relevant again.
+      clearDeadlineNotified(editingDeadlineId);
     } else {
       state.deadlines.push({
         id: generateId(),
@@ -3215,6 +3457,7 @@
     if (!target) return;
     if (!window.confirm("¿Eliminar la entrega \"" + target.title + "\"? Esta acción no se puede deshacer.")) return;
     state.deadlines = state.deadlines.filter(function (d) { return d.id !== deadlineId; });
+    clearDeadlineNotified(deadlineId);
     saveState();
     renderAll();
     if (activeUnitId && document.getElementById("unitModal").classList.contains("open")) {
@@ -3417,15 +3660,19 @@
 
     window.addEventListener("beforeunload", function () {
       if (tickTimer !== null) window.clearInterval(tickTimer);
+      if (notificationTimer !== null) window.clearInterval(notificationTimer);
     });
   }
 
   function init() {
     loadState();
     applyTheme();
+    injectPwaHead();
+    registerServiceWorker();
     bindStaticEvents();
     switchScreen("dashboard");
     startTimer();
+    startNotificationWatcher();
   }
 
   init();
