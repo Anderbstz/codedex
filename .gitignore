@@ -1,0 +1,7 @@
+# Local tooling artifacts (skill registry, caches) — not project content
+.atl/
+
+# OS noise
+Thumbs.db
+desktop.ini
+.DS_Store
