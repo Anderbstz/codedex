@@ -2352,20 +2352,26 @@
     return SCHEDULE_DAY_NAMES[day - 1] || "";
   }
 
+  // A grid import keeps the cell text verbatim in `label`; its start/end may be
+  // null when the text was not a readable time. Either a real time pair or a
+  // label is enough for the entry to be valid, so a label-only row never drops.
   function isValidScheduleEntry(entry) {
-    return !!entry && typeof entry === "object" &&
-      typeof entry.day === "number" && entry.day >= 1 && entry.day <= 7 &&
-      typeof entry.start === "string" && /^\d{2}:\d{2}$/.test(entry.start) &&
+    if (!entry || typeof entry !== "object") return false;
+    if (typeof entry.day !== "number" || entry.day < 1 || entry.day > 7) return false;
+    var hasTimes = typeof entry.start === "string" && /^\d{2}:\d{2}$/.test(entry.start) &&
       typeof entry.end === "string" && /^\d{2}:\d{2}$/.test(entry.end);
+    var hasLabel = typeof entry.label === "string" && entry.label.trim() !== "";
+    return hasTimes || hasLabel;
   }
 
   function normalizeScheduleEntry(entry) {
     return {
       day: entry.day,
-      start: entry.start,
-      end: entry.end,
+      start: typeof entry.start === "string" ? entry.start : null,
+      end: typeof entry.end === "string" ? entry.end : null,
       unit: typeof entry.unit === "string" ? entry.unit.trim() : "",
-      room: typeof entry.room === "string" ? entry.room.trim() : ""
+      room: typeof entry.room === "string" ? entry.room.trim() : "",
+      label: typeof entry.label === "string" && entry.label.trim() !== "" ? entry.label.trim() : null
     };
   }
 
@@ -2481,6 +2487,36 @@
     return null;
   }
 
+  // Grid cells carry one free-text time range ("8:00 - 11:20"). Peruvian
+  // timetables drop the meridiem, so the hour is ambiguous. The documented and
+  // visibly-stated assumption: a 24-hour-looking time is taken as-is, an hour
+  // from 1 to 6 becomes PM (+12), everything else stays AM. The original text is
+  // preserved separately in `label`, never lost to this interpretation.
+  function normalizeGridScheduleTime(raw) {
+    var value = String(raw).trim().toLowerCase().replace(/\s+/g, "");
+    if (value === "") return null;
+    var match = value.match(/^(\d{1,2})(?::(\d{2}))?h?(?:rs)?$/);
+    if (!match) return null;
+    var hour = parseInt(match[1], 10);
+    var minute = match[2] !== undefined ? parseInt(match[2], 10) : 0;
+    if (hour > 23 || minute > 59) return null;
+    if (hour >= 1 && hour <= 6) hour += 12;
+    return pad2(hour) + ":" + pad2(minute);
+  }
+
+  function parseGridScheduleTimeRange(raw) {
+    var value = String(raw).trim();
+    if (value === "") return null;
+    var pieces = value
+      .split(/\s*(?:-|[\u2013\u2014]|\b(?:a|to)\b)\s*/i)
+      .filter(function (piece) { return piece.trim() !== ""; });
+    if (pieces.length === 0) return null;
+    var start = normalizeGridScheduleTime(pieces[0]);
+    if (!start) return null;
+    var end = pieces.length > 1 ? normalizeGridScheduleTime(pieces[1]) : null;
+    return { start: start, end: end };
+  }
+
   // Map header cells to column indexes. Returns how many columns were recognised.
   function mapScheduleHeader(fields) {
     var mapping = {};
@@ -2550,9 +2586,75 @@
     return false;
   }
 
+  // A grid timetable lists day names across one row and one time range per cell
+  // beneath. Detect that row: its non-empty cells must be mostly day names (at
+  // least two distinct days) and it must have a non-empty row below it. Rows
+  // above the day row are ignored, and days with no cells are simply absent.
+  function findScheduleGrid(rows) {
+    for (var rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+      var row = rows[rowIndex];
+      if (!matrixRowHasContent(row)) continue;
+      var nonEmpty = 0;
+      var dayCells = 0;
+      var columnDay = {};
+      var distinctDays = {};
+      for (var column = 0; column < row.length; column++) {
+        var raw = row[column];
+        if (raw === null || raw === undefined || String(raw).trim() === "") continue;
+        nonEmpty += 1;
+        var day = parseScheduleDay(raw);
+        if (day === null) continue;
+        dayCells += 1;
+        columnDay[column] = day;
+        distinctDays[day] = true;
+      }
+      if (Object.keys(distinctDays).length < 2 || dayCells * 2 <= nonEmpty) continue;
+      for (var below = rowIndex + 1; below < rows.length; below++) {
+        if (matrixRowHasContent(rows[below])) return { rowIndex: rowIndex, columnDay: columnDay };
+      }
+    }
+    return null;
+  }
+
+  // Transpose a detected grid: for each day column, every non-empty cell below
+  // the day row becomes one entry for that day. The raw cell text rides along in
+  // `label`; start/end are best-effort and may be null.
+  function scheduleFromGrid(rows, grid) {
+    var result = { rows: [], errors: [], headerFound: false, assumedOrder: false, grid: true };
+    Object.keys(grid.columnDay).forEach(function (key) {
+      var column = parseInt(key, 10);
+      var day = grid.columnDay[key];
+      for (var rowIndex = grid.rowIndex + 1; rowIndex < rows.length; rowIndex++) {
+        var fields = rows[rowIndex];
+        if (!matrixRowHasContent(fields)) continue;
+        var raw = fields[column];
+        if (raw === null || raw === undefined) continue;
+        var label = String(raw).trim();
+        if (label === "") continue;
+        var range = parseGridScheduleTimeRange(label);
+        result.rows.push({
+          day: day,
+          start: range && range.start ? range.start : null,
+          end: range && range.end ? range.end : null,
+          unit: "",
+          room: "",
+          label: label
+        });
+      }
+    });
+    result.rows.sort(function (a, b) {
+      if (a.day !== b.day) return a.day - b.day;
+      return (a.start || "99:99").localeCompare(b.start || "99:99");
+    });
+    return result;
+  }
+
   function scheduleFromMatrix(matrix) {
-    var result = { rows: [], errors: [], headerFound: false, assumedOrder: false };
+    var result = { rows: [], errors: [], headerFound: false, assumedOrder: false, grid: false };
     var rows = Array.isArray(matrix) ? matrix : [];
+
+    var grid = findScheduleGrid(rows);
+    if (grid) return scheduleFromGrid(rows, grid);
 
     var firstIndex = -1;
     for (var i = 0; i < rows.length; i++) {
@@ -2560,7 +2662,8 @@
     }
     if (firstIndex === -1) return result;
 
-    var header = mapScheduleHeader(rows[firstIndex]);
+    var headerFields = rows[firstIndex];
+    var header = mapScheduleHeader(headerFields);
 
     var mapping;
     var startRow;
@@ -2579,6 +2682,19 @@
     for (var rowIndex = startRow; rowIndex < rows.length; rowIndex++) {
       var fields = rows[rowIndex];
       if (!matrixRowHasContent(fields)) continue;
+      // A row whose cell count differs from the header cannot map cleanly. Report
+      // it instead of sliding the values one column over in silence.
+      if (result.headerFound && fields.length !== headerFields.length) {
+        result.errors.push({
+          line: rowIndex + 1,
+          reason: fields.length < headerFields.length
+            ? "La fila tiene " + fields.length + " valores y el encabezado declara " + headerFields.length +
+              " columnas. La fila es más corta, así que las columnas pueden estar desalineadas."
+            : "La fila tiene " + fields.length + " valores y el encabezado declara " + headerFields.length +
+              " columnas. La fila es más larga; los valores sobrantes se ignoran.",
+          raw: fields.join(" | ")
+        });
+      }
       var parsed = parseScheduleRow(fields, mapping);
       if (parsed.ok) result.rows.push(parsed.row);
       else result.errors.push({ line: rowIndex + 1, reason: parsed.reason, raw: fields.join(" | ") });
@@ -2591,7 +2707,7 @@
   // drops a row silently: anything unreadable is returned with its line number.
   function parseScheduleText(text) {
     var lines = String(text === null || text === undefined ? "" : text).replace(/\r\n?/g, "\n").split("\n");
-    var empty = { rows: [], errors: [], delimiter: ",", headerFound: false, assumedOrder: false };
+    var empty = { rows: [], errors: [], delimiter: ",", headerFound: false, assumedOrder: false, grid: false };
 
     var firstIndex = -1;
     for (var i = 0; i < lines.length; i++) {
@@ -4020,7 +4136,7 @@
   function scheduleEntriesForDay(day) {
     return state.schedule
       .filter(function (entry) { return entry.day === day; })
-      .sort(function (a, b) { return a.start.localeCompare(b.start); });
+      .sort(function (a, b) { return (a.start || "99:99").localeCompare(b.start || "99:99"); });
   }
 
   function renderSchedule() {
@@ -4115,9 +4231,12 @@
     var unit = findUnitByName(entry.unit);
     var meta = entry.unit || "Sin unidad";
     if (entry.room) meta += " · " + entry.room;
+    // The user's own text wins over the parsed time, so an ambiguous hour is
+    // never shown as a reinterpreted one.
+    var timeText = entry.label ? entry.label : ((entry.start || "") + " - " + (entry.end || ""));
 
     var content = [
-      el("span", { class: "schedule-time", text: entry.start + " - " + entry.end }),
+      el("span", { class: "schedule-time", text: timeText }),
       el("span", { class: "schedule-info" }, [
         el("span", { class: "schedule-unit", text: meta })
       ])
@@ -4172,6 +4291,17 @@
     var box = el("div", { class: "schedule-preview" });
     box.appendChild(el("span", { class: "field-label", text: "Vista previa" }));
 
+    if (preview.grid) {
+      box.appendChild(el("div", { class: "grade-note" }, [
+        icon("schedule"),
+        el("span", { text: "Leí el archivo como una grilla semanal: cada columna es un día y cada fila de abajo, un bloque de horas. El archivo no trae nombres de unidad." })
+      ]));
+      box.appendChild(el("div", { class: "grade-note warning" }, [
+        icon("alert"),
+        el("span", { text: "Las horas sin AM/PM se interpretaron como PM cuando van de 1 a 6 (ej. 1:00 a 13:00)." })
+      ]));
+    }
+
     if (preview.assumedOrder) {
       box.appendChild(el("div", { class: "grade-note warning" }, [
         icon("alert"),
@@ -4187,9 +4317,10 @@
     if (preview.rows.length > 0) {
       var list = el("ul", { class: "schedule-preview-list" });
       preview.rows.slice(0, 50).forEach(function (entry) {
+        var timeText = entry.label ? entry.label : ((entry.start || "") + " - " + (entry.end || ""));
         list.appendChild(el("li", {}, [
           el("span", { class: "schedule-preview-day", text: scheduleDayName(entry.day) }),
-          el("span", { class: "schedule-preview-text", text: entry.start + " - " + entry.end + " · " + (entry.unit || "Sin unidad") + (entry.room ? " · " + entry.room : "") })
+          el("span", { class: "schedule-preview-text", text: timeText + " · " + (entry.unit || "Sin unidad") + (entry.room ? " · " + entry.room : "") })
         ]));
       });
       if (preview.rows.length > 50) {
