@@ -1187,6 +1187,128 @@
   .schedule-entry-chip { flex: 0 0 auto; }
 
   /* =========================================================
+     17f. Schedule builder — inline course name on the block
+     ========================================================= */
+  .slot-block-course {
+    width: 100%;
+    padding: 6px 8px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 8px;
+  }
+
+  .slot-row.slot-block { cursor: pointer; }
+  .slot-row.slot-block.is-linked { border-left-color: var(--accent); }
+
+  .slot-block-link,
+  .slot-block-edit { flex: 0 0 auto; }
+
+  /* =========================================================
+     17g. Timetable (reading view below the builder)
+     ========================================================= */
+  .timetable-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+  }
+
+  .timetable {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+    min-width: 560px;
+    font-size: 12px;
+  }
+
+  .timetable th,
+  .timetable td {
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 4px 6px;
+    vertical-align: top;
+    text-align: left;
+    height: 28px;
+  }
+
+  .timetable tbody tr:last-child th,
+  .timetable tbody tr:last-child td { border-bottom: 0; }
+
+  .timetable thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: var(--surface-2);
+    font-size: 11.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .timetable .timetable-gutter {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    width: 54px;
+    min-width: 54px;
+    background: var(--surface-2);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .timetable thead .timetable-gutter { z-index: 4; }
+
+  .timetable-cell-empty { background: var(--surface); }
+
+  .timetable-cell-block { background: var(--accent-soft); padding: 0; }
+  .timetable-cell-block.is-linked { background: var(--accent-soft); }
+
+  .timetable-block-btn {
+    display: block;
+    width: 100%;
+    min-height: 100%;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    text-align: left;
+    padding: 4px 6px;
+    font: inherit;
+  }
+
+  .timetable-block-btn:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+
+  .timetable-block-time {
+    display: block;
+    font-size: 10.5px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: var(--accent-strong);
+  }
+
+  .timetable-block-name {
+    display: block;
+    margin-top: 2px;
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+
+  .timetable-block-room {
+    display: block;
+    margin-top: 2px;
+    font-size: 10.5px;
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+  }
+
+  /* =========================================================
      18. Bottom tabs
      ========================================================= */
   .tabbar {
@@ -4542,7 +4664,7 @@
 
     if (state.schedule.length > 0) {
       root.appendChild(el("h2", { class: "section-title", text: "La semana completa" }));
-      root.appendChild(renderScheduleWeek());
+      root.appendChild(renderScheduleTimetableCard());
     }
 
     root.appendChild(el("h2", { class: "section-title", text: "Importar horario" }));
@@ -4636,21 +4758,23 @@
     ]);
   }
 
+  // A marked block. The course name is typed inline on the block itself; the
+  // small edit button is the only path to the editor (ambiente and removal).
+  // Clicking the input never opens the editor or toggles the slot.
   function scheduleBlockRow(day, from, to, meta, slots) {
     var startText = slots[from].start;
     var endText = slots[to - 1].end;
     var unitName = meta.unit || "";
+    var linkedUnit = unitName ? findUnitByName(unitName) : null;
     var isNow = scheduleBlockIsNow(day, slots[from].startMinutes, slots[to - 1].endMinutes);
     var rangeText = startText + " - " + endText;
-    var detail = unitName || "Sin unidad didáctica";
-    if (meta.room) detail += " · " + meta.room;
+    var inputId = "slot-course-" + day + "-" + from + "-" + to;
+    var courseLabel = "Curso del bloque del " + scheduleDayName(day) + " " + startText + " a " + endText;
+    var editLabel = "Editar bloque del " + scheduleDayName(day) + " " + startText + " a " + endText;
 
-    return el("button", {
-      type: "button",
-      class: "slot-row slot-block" + (isNow ? " is-now" : ""),
-      "aria-pressed": "true",
-      "aria-label": scheduleDayName(day) + ", " + startText + " a " + endText + ", " + (unitName || "sin unidad didáctica") +
-        ", " + (meta.room || "sin ambiente") + ". Ocupado. Toca para editar el bloque",
+    return el("div", {
+      class: "slot-row slot-block" + (isNow ? " is-now" : "") + (linkedUnit ? " is-linked" : ""),
+      tabindex: "-1",
       dataset: { day: String(day), from: String(from), to: String(to) },
       on: { click: function () { openScheduleBlockEditor(day, from, to); } }
     }, [
@@ -4658,11 +4782,65 @@
       el("span", { class: "slot-body" }, [
         el("span", { class: "slot-block-info" }, [
           el("span", { class: "slot-block-unit", text: rangeText }),
-          el("span", { class: "slot-block-room", text: detail })
+          el("input", {
+            class: "input slot-block-course",
+            type: "text", id: inputId, maxlength: "80", autocomplete: "off",
+            placeholder: "Escribe el curso",
+            value: unitName,
+            "aria-label": courseLabel,
+            on: {
+              click: stopRowActivation,
+              mousedown: stopRowActivation,
+              pointerdown: stopRowActivation,
+              change: function (event) { commitScheduleBlockCourse(day, from, to, event.target); },
+              blur: function (event) { commitScheduleBlockCourse(day, from, to, event.target); },
+              keydown: function (event) { handleScheduleCourseKeydown(event, day, from, to); }
+            }
+          }),
+          meta.room ? el("span", { class: "slot-block-room", text: meta.room }) : null
         ]),
-        el("span", { class: "slot-block-link", "aria-hidden": "true" }, [icon("edit")])
+        linkedUnit ? el("button", {
+          type: "button", class: "btn btn-icon slot-block-link",
+          "aria-label": "Abrir la unidad didáctica " + linkedUnit.name,
+          on: { click: function (event) { event.stopPropagation(); openUnitModal(linkedUnit.id); } }
+        }, [icon("chevron-right")]) : null,
+        el("button", {
+          type: "button", class: "btn btn-icon slot-block-edit",
+          "aria-label": editLabel,
+          on: { click: function (event) { event.stopPropagation(); openScheduleBlockEditor(day, from, to); } }
+        }, [icon("edit")])
       ])
     ]);
+  }
+
+  // Persist the typed course name to the block. Matching an active-cycle unit is
+  // a convenience, never a requirement: any other text is a valid plain label.
+  function commitScheduleBlockCourse(day, from, to, input) {
+    if (!input) return;
+    var value = input.value.trim();
+    var occupancy = scheduleSlotOccupancy(day);
+    var meta = occupancy[from] || { unit: "", room: "" };
+    if (value === (meta.unit || "")) return;
+    applyScheduleBlockMeta(day, from, to, value, meta.room || "");
+    saveState();
+    var unit = value ? findUnitByName(value) : null;
+    renderSchedule();
+    if (unit) openUnitModal(unit.id);
+  }
+
+  function handleScheduleCourseKeydown(event, day, from, to) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      event.stopPropagation();
+      commitScheduleBlockCourse(day, from, to, event.target);
+      event.target.blur();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      var meta = scheduleSlotOccupancy(day)[from] || { unit: "" };
+      event.target.value = meta.unit || "";
+      event.target.blur();
+    }
   }
 
   function scheduleBlockIsNow(day, startMinutes, endMinutes) {
@@ -4726,24 +4904,99 @@
     return card;
   }
 
-  function renderScheduleWeek() {
+  // Reading view: a real timetable with a sticky time gutter on the left and one
+  // column per day. Blocks span their rows; empty slots stay empty cells. This is
+  // not the editing surface (the builder is), but a block cell is tappable and
+  // opens the same block editor as a bonus.
+  function renderScheduleTimetableCard() {
     var card = el("section", { class: "card" });
-    for (var day = 1; day <= 7; day++) {
-      var entries = scheduleEntriesForDay(day);
-      var group = el("div", { class: "schedule-day" }, [
-        el("div", { class: "schedule-day-head" }, [
-          el("span", { class: "schedule-day-name", text: scheduleDayName(day) }),
-          el("span", { class: "schedule-day-count", text: entries.length === 0 ? "sin clases" : (entries.length === 1 ? "1 clase" : entries.length + " clases") })
-        ])
-      ]);
-      if (entries.length === 0) {
-        group.appendChild(el("p", { class: "schedule-day-empty", text: "Sin clases registradas." }));
-      } else {
-        entries.forEach(function (entry) { group.appendChild(scheduleEntryRow(entry)); });
-      }
-      card.appendChild(group);
+    card.appendChild(el("p", { class: "helper", text: "Vista de tabla de tu semana: los días van en columnas y cada fila es un bloque de 50 minutos. Desliza a los lados para ver todos los días; la columna de horas queda fija." }));
+    card.appendChild(el("div", { class: "timetable-wrap" }, [renderScheduleTimetable()]));
+    card.appendChild(el("div", { class: "timeline-legend" }, [
+      el("span", { class: "legend-item" }, [
+        el("span", { class: "legend-swatch", style: "background: var(--accent-soft); border-color: var(--accent);" }),
+        "Bloque de clase"
+      ]),
+      el("span", { class: "legend-item" }, [
+        el("span", { class: "legend-swatch" }),
+        "Casilla libre"
+      ])
+    ]));
+
+    var offGridCount = state.schedule.filter(function (entry) {
+      return !scheduleEntrySlotSpan(entry, scheduleSlotBounds());
+    }).length;
+    if (offGridCount > 0) {
+      card.appendChild(el("p", { class: "helper", text: offGridCount === 1
+        ? "1 bloque fuera de la grilla no aparece en la tabla; se conserva en el armador."
+        : offGridCount + " bloques fuera de la grilla no aparecen en la tabla; se conservan en el armador." }));
     }
     return card;
+  }
+
+  function renderScheduleTimetable() {
+    var slots = scheduleSlotBounds();
+    var startRuns = {};
+    var covered = {};
+    for (var day = 1; day <= 7; day++) {
+      startRuns[day] = {};
+      covered[day] = {};
+      scheduleOccupancyRuns(scheduleSlotOccupancy(day)).forEach(function (run) {
+        startRuns[day][run.from] = run;
+        for (var index = run.from + 1; index < run.to; index++) covered[day][index] = true;
+      });
+    }
+
+    var table = el("table", { class: "timetable" });
+    table.appendChild(el("caption", { class: "sr-only", text: "Horario semanal: cada columna es un día y cada fila un bloque de 50 minutos." }));
+
+    var headRow = el("tr");
+    headRow.appendChild(el("th", { class: "timetable-gutter", scope: "col", text: "Hora" }));
+    for (var headDay = 1; headDay <= 7; headDay++) {
+      headRow.appendChild(el("th", { scope: "col", text: scheduleDayName(headDay) }));
+    }
+    table.appendChild(el("thead", {}, [headRow]));
+
+    var tbody = el("tbody");
+    for (var index = 0; index < slots.length; index++) {
+      var row = el("tr");
+      row.appendChild(el("th", { class: "timetable-gutter", scope: "row", text: slots[index].start }));
+      for (var rowDay = 1; rowDay <= 7; rowDay++) {
+        var run = startRuns[rowDay][index];
+        if (run) {
+          row.appendChild(scheduleTimetableBlockCell(rowDay, run, slots));
+        } else if (!covered[rowDay][index]) {
+          row.appendChild(el("td", { class: "timetable-cell-empty", "aria-hidden": "true" }));
+        }
+      }
+      tbody.appendChild(row);
+    }
+    table.appendChild(tbody);
+    return table;
+  }
+
+  function scheduleTimetableBlockCell(day, run, slots) {
+    var startText = slots[run.from].start;
+    var endText = slots[run.to - 1].end;
+    var rangeText = startText + " - " + endText;
+    var unitName = run.unit || "";
+    var linkedUnit = unitName ? findUnitByName(unitName) : null;
+
+    var content = el("button", {
+      type: "button",
+      class: "timetable-block-btn",
+      "aria-label": scheduleDayName(day) + ", " + rangeText + ", " + (unitName || "sin curso") + ". Abrir el bloque",
+      on: { click: function () { openScheduleBlockEditor(day, run.from, run.to); } }
+    }, [
+      el("span", { class: "timetable-block-time", text: rangeText }),
+      unitName ? el("span", { class: "timetable-block-name", text: unitName }) : null,
+      run.room ? el("span", { class: "timetable-block-room", text: run.room }) : null
+    ]);
+
+    return el("td", {
+      class: "timetable-cell-block" + (linkedUnit ? " is-linked" : ""),
+      rowspan: String(run.to - run.from)
+    }, [content]);
   }
 
   // One schedule row. When the unit name matches an active cycle unit, the row
@@ -4865,31 +5118,9 @@
     var body = document.getElementById("scheduleBlockModalBody");
     clear(body);
 
-    var unit = meta.unit ? findUnitByName(meta.unit) : null;
-    if (unit) {
-      body.appendChild(el("button", {
-        type: "button", class: "btn btn-primary btn-block",
-        on: {
-          click: function () {
-            closeModal(document.getElementById("scheduleBlockModal"));
-            openUnitModal(unit.id);
-          }
-        }
-      }, [icon("units"), "Ver " + unit.name]));
-    }
-
-    var unitSelect = el("select", { class: "select", id: "scheduleBlockUnit" }, [
-      el("option", { value: "", text: "Sin unidad didáctica" })
-    ]);
-    activeUnits().forEach(function (activeUnit) {
-      var option = el("option", { value: activeUnit.name, text: activeUnit.name });
-      if (meta.unit && normalizeToken(activeUnit.name) === normalizeToken(meta.unit)) option.selected = true;
-      unitSelect.appendChild(option);
-    });
-    body.appendChild(el("div", { class: "field" }, [
-      el("label", { for: "scheduleBlockUnit" }, [icon("units", "icon-lead"), "Unidad didáctica (opcional)"]),
-      unitSelect,
-      el("p", { class: "helper", text: "Elige la unidad que se dicta en este bloque. Si no la sabes, déjalo sin unidad: es normal." })
+    body.appendChild(el("div", { class: "grade-note" }, [
+      icon("note"),
+      el("span", { text: "El nombre del curso se escribe directamente sobre el bloque, en el horario. Aquí solo ajustas el ambiente o quitas el bloque. Curso actual: " + (meta.unit || "sin curso") + "." })
     ]));
 
     body.appendChild(el("div", { class: "field" }, [
@@ -4930,15 +5161,13 @@
 
   function saveScheduleBlock() {
     if (!editingScheduleBlock) return;
-    var select = document.getElementById("scheduleBlockUnit");
+    var day = editingScheduleBlock.day;
+    var from = editingScheduleBlock.from;
+    var to = editingScheduleBlock.to;
+    var occupancy = scheduleSlotOccupancy(day);
+    var currentUnit = occupancy[from] ? occupancy[from].unit : "";
     var roomInput = document.getElementById("scheduleBlockRoom");
-    applyScheduleBlockMeta(
-      editingScheduleBlock.day,
-      editingScheduleBlock.from,
-      editingScheduleBlock.to,
-      select ? select.value : "",
-      roomInput ? roomInput.value.trim() : ""
-    );
+    applyScheduleBlockMeta(day, from, to, currentUnit, roomInput ? roomInput.value.trim() : "");
     saveState();
     closeModal(document.getElementById("scheduleBlockModal"));
     renderSchedule();
