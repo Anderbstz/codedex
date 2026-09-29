@@ -1073,6 +1073,120 @@
   }
 
   /* =========================================================
+     17e. Schedule builder (absolute 50-minute slot grid)
+     ========================================================= */
+  .builder-daybar {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 12px;
+  }
+
+  .builder-day {
+    flex: 1 1 0;
+    min-width: 0;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 700;
+    padding: 9px 2px;
+    border-radius: var(--radius-pill);
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+
+  .builder-day[aria-pressed="true"] {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-contrast);
+  }
+
+  .slot-list { display: flex; flex-direction: column; gap: 6px; }
+
+  .slot-row {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    width: 100%;
+    text-align: left;
+    border: 1px dashed var(--border-strong);
+    background: var(--surface);
+    color: var(--text);
+    border-radius: var(--radius-sm);
+    padding: 0;
+    overflow: hidden;
+    font: inherit;
+  }
+
+  .slot-time {
+    flex: 0 0 58px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface-2);
+    border-right: 1px solid var(--border);
+    font-size: 11.5px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+    padding: 13px 4px;
+    white-space: nowrap;
+  }
+
+  .slot-body {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  button.slot-row { cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease; }
+  button.slot-row:hover { border-color: var(--accent); }
+  button.slot-row:active { transform: scale(0.99); }
+
+  .slot-row.slot-empty .slot-time { color: var(--text-faint); }
+  .slot-empty-text { font-size: 13px; color: var(--text-faint); }
+
+  .slot-row.slot-block {
+    border-style: solid;
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .slot-row.slot-block .slot-time {
+    background: var(--accent);
+    color: var(--accent-contrast);
+    border-right-color: var(--accent);
+  }
+
+  .slot-block-info { flex: 1 1 auto; min-width: 0; }
+  .slot-block-unit { display: block; font-size: 13.5px; font-weight: 700; overflow-wrap: anywhere; }
+  .slot-block-room { display: block; margin-top: 2px; font-size: 12px; color: var(--text-muted); overflow-wrap: anywhere; }
+  .slot-block-link { flex: 0 0 auto; color: var(--accent-strong); }
+
+  .slot-row.is-now { box-shadow: 0 0 0 2px var(--accent); }
+
+  .slot-offgrid { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--border); }
+  .slot-offgrid-title { margin: 0 0 4px; font-size: 12.5px; font-weight: 700; color: var(--warning); }
+
+  .slot-chip-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+
+  .slot-chip {
+    border: 1px solid var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    font-size: 12.5px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    padding: 8px 11px;
+    border-radius: var(--radius-pill);
+  }
+
+  .schedule-entry.is-now { box-shadow: 0 0 0 2px var(--accent); }
+  .schedule-entry-chip { flex: 0 0 auto; }
+
+  /* =========================================================
      18. Bottom tabs
      ========================================================= */
   .tabbar {
@@ -1363,6 +1477,21 @@
         </div>
       </form>
     </div>
+  </div>
+</div>
+
+<!-- ============================ Schedule block editor modal ============================ -->
+<div class="modal" id="scheduleBlockModal" role="dialog" aria-modal="true" aria-labelledby="scheduleBlockModalTitle">
+  <div class="modal-sheet">
+    <div class="modal-head">
+      <button class="btn btn-icon" id="scheduleBlockModalBack" type="button" aria-label="Volver"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-arrow-left"></use></svg></button>
+      <div class="modal-head-text">
+        <h2 class="modal-title" id="scheduleBlockModalTitle">Bloque del horario</h2>
+        <p class="modal-sub" id="scheduleBlockModalSub"></p>
+      </div>
+      <button class="btn btn-icon" id="scheduleBlockModalClose" type="button" aria-label="Cerrar"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-close"></use></svg></button>
+    </div>
+    <div class="modal-body" id="scheduleBlockModalBody"></div>
   </div>
 </div>
 
@@ -2354,6 +2483,7 @@
   // unit: string, room: string }. Times are 24-hour strings; day is numeric so
   // ordering never depends on locale.
   var SCHEDULE_DAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+  var SCHEDULE_DAY_SHORT = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
   function scheduleDayName(day) {
     return SCHEDULE_DAY_NAMES[day - 1] || "";
@@ -2380,6 +2510,155 @@
       room: typeof entry.room === "string" ? entry.room.trim() : "",
       label: typeof entry.label === "string" && entry.label.trim() !== "" ? entry.label.trim() : null
     };
+  }
+
+  /* =========================================================
+     Class schedule (horario) — builder slot grid
+     ========================================================= */
+  // Tecsup class blocks are 50 minutes long and the enrolled day runs from
+  // 08:00 to 21:20 (800 minutes = 16 blocks). Verified against the user's own
+  // schedule export: every observed block starts and ends on one of these
+  // boundaries, so the whole day is a fixed grid of 16 slots. The three
+  // constants below are the only numbers that define the grid.
+  var SCHEDULE_BLOCK_START = "08:00";
+  var SCHEDULE_BLOCK_MINUTES = 50;
+  var SCHEDULE_BLOCK_COUNT = 16;
+
+  function scheduleTimeToMinutes(value) {
+    if (typeof value !== "string") return null;
+    var match = value.match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return null;
+    var hour = parseInt(match[1], 10);
+    var minute = parseInt(match[2], 10);
+    if (hour > 23 || minute > 59) return null;
+    return hour * 60 + minute;
+  }
+
+  // Derive the 16 slots from the three constants so changing the grid later is
+  // a data-only edit.
+  function scheduleSlotBounds() {
+    var base = scheduleTimeToMinutes(SCHEDULE_BLOCK_START);
+    var slots = [];
+    for (var index = 0; index < SCHEDULE_BLOCK_COUNT; index++) {
+      var startMinutes = base + index * SCHEDULE_BLOCK_MINUTES;
+      var endMinutes = startMinutes + SCHEDULE_BLOCK_MINUTES;
+      slots.push({
+        index: index,
+        start: minutesToScheduleTime(startMinutes),
+        end: minutesToScheduleTime(endMinutes),
+        startMinutes: startMinutes,
+        endMinutes: endMinutes
+      });
+    }
+    return slots;
+  }
+
+  // Which slots an entry covers, or null when it does not align to the grid
+  // (out of range, partial slot, backwards interval). Non-aligned entries are
+  // kept untouched instead of being snapped or dropped.
+  function scheduleEntrySlotSpan(entry, slots) {
+    if (!entry || typeof entry.start !== "string" || typeof entry.end !== "string") return null;
+    if (!/^\d{2}:\d{2}$/.test(entry.start) || !/^\d{2}:\d{2}$/.test(entry.end)) return null;
+    var start = scheduleTimeToMinutes(entry.start);
+    var end = scheduleTimeToMinutes(entry.end);
+    if (start === null || end === null || end <= start) return null;
+    var base = slots[0].startMinutes;
+    if ((start - base) % SCHEDULE_BLOCK_MINUTES !== 0) return null;
+    if ((end - start) % SCHEDULE_BLOCK_MINUTES !== 0) return null;
+    var from = (start - base) / SCHEDULE_BLOCK_MINUTES;
+    var to = (end - base) / SCHEDULE_BLOCK_MINUTES;
+    if (from < 0 || to > slots.length || from >= to) return null;
+    return { from: from, to: to };
+  }
+
+  // Per-slot metadata for a day, derived from the aligned entries. Later entries
+  // win on overlap. Slots outside any entry stay null.
+  function scheduleSlotOccupancy(day) {
+    var slots = scheduleSlotBounds();
+    var occupancy = [];
+    for (var i = 0; i < slots.length; i++) occupancy.push(null);
+    scheduleEntriesForDay(day).forEach(function (entry) {
+      var span = scheduleEntrySlotSpan(entry, slots);
+      if (!span) return;
+      for (var index = span.from; index < span.to; index++) {
+        occupancy[index] = { unit: entry.unit || "", room: entry.room || "" };
+      }
+    });
+    return occupancy;
+  }
+
+  // Merge contiguous occupied slots that share unit and room into one run. Runs
+  // break when the unit or the room changes, so per-block metadata is preserved.
+  function scheduleOccupancyRuns(occupancy) {
+    var runs = [];
+    var index = 0;
+    while (index < occupancy.length) {
+      if (!occupancy[index]) { index += 1; continue; }
+      var end = index;
+      while (end + 1 < occupancy.length && occupancy[end + 1] &&
+             occupancy[end + 1].unit === occupancy[index].unit &&
+             occupancy[end + 1].room === occupancy[index].room) {
+        end += 1;
+      }
+      runs.push({ from: index, to: end + 1, unit: occupancy[index].unit, room: occupancy[index].room });
+      index = end + 1;
+    }
+    return runs;
+  }
+
+  // Replace one day's aligned entries with the coalesced runs, keeping every
+  // non-aligned entry of that day exactly as it was.
+  function rebuildScheduleDay(day, occupancy) {
+    var slots = scheduleSlotBounds();
+    var kept = state.schedule.filter(function (entry) {
+      if (entry.day !== day) return true;
+      return !scheduleEntrySlotSpan(entry, slots);
+    });
+    var rebuilt = scheduleOccupancyRuns(occupancy).map(function (run) {
+      return normalizeScheduleEntry({
+        day: day,
+        start: slots[run.from].start,
+        end: slots[run.to - 1].end,
+        unit: run.unit,
+        room: run.room
+      });
+    });
+    state.schedule = kept.concat(rebuilt);
+  }
+
+  // A slot flipped on next to a block inherits that block's unit and room.
+  function scheduleNeighbourMeta(occupancy, index) {
+    var left = index > 0 ? occupancy[index - 1] : null;
+    if (left) return { unit: left.unit, room: left.room };
+    var right = index + 1 < occupancy.length ? occupancy[index + 1] : null;
+    if (right) return { unit: right.unit, room: right.room };
+    return { unit: "", room: "" };
+  }
+
+  function toggleScheduleSlot(day, index) {
+    var occupancy = scheduleSlotOccupancy(day);
+    if (index < 0 || index >= occupancy.length) return;
+    occupancy[index] = occupancy[index] ? null : scheduleNeighbourMeta(occupancy, index);
+    rebuildScheduleDay(day, occupancy);
+    saveState();
+    renderSchedule();
+    focusScheduleSlot(day, index);
+  }
+
+  function applyScheduleBlockMeta(day, from, to, unitName, room) {
+    var occupancy = scheduleSlotOccupancy(day);
+    for (var index = from; index < to && index < occupancy.length; index++) {
+      if (occupancy[index]) occupancy[index] = { unit: unitName || "", room: room || "" };
+    }
+    rebuildScheduleDay(day, occupancy);
+  }
+
+  function clearScheduleBlock(day, from, to) {
+    var occupancy = scheduleSlotOccupancy(day);
+    for (var index = from; index < to && index < occupancy.length; index++) {
+      occupancy[index] = null;
+    }
+    rebuildScheduleDay(day, occupancy);
   }
 
   /* =========================================================
@@ -4235,6 +4514,9 @@
   // change, and Settings stays about the cycle itself.
   var schedulePreview = null; // parsed import awaiting explicit confirmation
   var schedulePreviewSource = "";
+  var scheduleImportOpen = false; // import is secondary: collapsed until asked
+  var scheduleBuilderDay = todayScheduleDay(); // day shown in the builder grid
+  var editingScheduleBlock = null; // { day, from, to } while the block editor is open
 
   function todayScheduleDay() {
     var jsDay = new Date().getDay(); // 0 = Sunday
@@ -4251,40 +4533,24 @@
     var root = document.getElementById("screen-schedule");
     clear(root);
 
-    root.appendChild(el("div", { class: "row-between" }, [
-      el("h2", { class: "section-title", style: "margin: 0;", text: "Tu horario" }),
-      el("button", {
-        type: "button", class: "btn btn-sm",
-        on: { click: downloadScheduleTemplate }
-      }, [
-        icon("note"),
-        "Descargar plantilla"
-      ])
-    ]));
+    root.appendChild(el("h2", { class: "section-title", text: "Tu horario" }));
 
-    if (state.schedule.length === 0) {
-      root.appendChild(emptyState(
-        "schedule",
-        "Todavía no importaste tu horario",
-        "Sube un archivo CSV, TSV o Excel, o pega las filas de tu horario para ver qué horas tienes clases. Puedes descargar una plantilla de ejemplo.",
-        el("button", {
-          type: "button", class: "btn btn-primary",
-          text: "Descargar plantilla",
-          on: { click: downloadScheduleTemplate }
-        })
-      ));
-    } else {
-      root.appendChild(renderScheduleToday());
+    root.appendChild(renderScheduleToday());
+
+    root.appendChild(el("h2", { class: "section-title", text: "Arma tu horario" }));
+    root.appendChild(renderScheduleBuilder());
+
+    if (state.schedule.length > 0) {
       root.appendChild(el("h2", { class: "section-title", text: "La semana completa" }));
       root.appendChild(renderScheduleWeek());
     }
 
     root.appendChild(el("h2", { class: "section-title", text: "Importar horario" }));
-    root.appendChild(renderScheduleImportCard());
+    root.appendChild(renderScheduleImportSection());
 
     if (state.schedule.length > 0) {
       var clearCard = el("section", { class: "card" });
-      clearCard.appendChild(el("p", { class: "helper", text: "Puedes vaciar el horario y volver a importarlo cuando quieras." }));
+      clearCard.appendChild(el("p", { class: "helper", text: "Puedes vaciar el horario y volver a armarlo cuando quieras." }));
       clearCard.appendChild(el("button", {
         type: "button", class: "btn btn-danger mt-12",
         on: { click: clearSchedule }
@@ -4296,9 +4562,156 @@
     }
   }
 
+  function renderScheduleBuilder() {
+    var card = el("section", { class: "card" });
+    card.appendChild(el("p", { class: "helper", text: "Toca una casilla para marcar la hora en que tienes clase. El día va de 08:00 a 21:20 en bloques de 50 minutos. Toca un bloque ya marcado para ponerle unidad didáctica o ambiente." }));
+
+    var daybar = el("div", { class: "builder-daybar", role: "group", "aria-label": "Elige el día" });
+    for (var day = 1; day <= 7; day++) {
+      (function (d) {
+        daybar.appendChild(el("button", {
+          type: "button",
+          class: "builder-day",
+          "aria-pressed": scheduleBuilderDay === d ? "true" : "false",
+          "aria-label": scheduleDayName(d),
+          dataset: { builderDay: String(d) },
+          text: SCHEDULE_DAY_SHORT[d - 1],
+          on: {
+            click: function () {
+              scheduleBuilderDay = d;
+              renderSchedule();
+              var button = document.querySelector('[data-builder-day="' + d + '"]');
+              if (button) button.focus();
+            }
+          }
+        }));
+      })(day);
+    }
+    card.appendChild(daybar);
+
+    card.appendChild(renderScheduleSlotList(scheduleBuilderDay));
+
+    var offGrid = renderScheduleOffGrid(scheduleBuilderDay);
+    if (offGrid) card.appendChild(offGrid);
+
+    return card;
+  }
+
+  function renderScheduleSlotList(day) {
+    var slots = scheduleSlotBounds();
+    var occupancy = scheduleSlotOccupancy(day);
+    var list = el("div", { class: "slot-list" });
+    var index = 0;
+    while (index < slots.length) {
+      if (!occupancy[index]) {
+        list.appendChild(scheduleEmptySlotRow(day, slots[index]));
+        index += 1;
+        continue;
+      }
+      var end = index;
+      while (end + 1 < slots.length && occupancy[end + 1] &&
+             occupancy[end + 1].unit === occupancy[index].unit &&
+             occupancy[end + 1].room === occupancy[index].room) {
+        end += 1;
+      }
+      list.appendChild(scheduleBlockRow(day, index, end + 1, occupancy[index], slots));
+      index = end + 1;
+    }
+    return list;
+  }
+
+  function scheduleEmptySlotRow(day, slot) {
+    return el("button", {
+      type: "button",
+      class: "slot-row slot-empty",
+      "aria-pressed": "false",
+      "aria-label": scheduleDayName(day) + ", " + slot.start + " a " + slot.end + ", libre. Toca para marcar clase",
+      dataset: { day: String(day), from: String(slot.index), to: String(slot.index + 1) },
+      on: { click: function () { toggleScheduleSlot(day, slot.index); } }
+    }, [
+      el("span", { class: "slot-time", text: slot.start }),
+      el("span", { class: "slot-body" }, [
+        el("span", { class: "slot-empty-text", text: "Libre" })
+      ])
+    ]);
+  }
+
+  function scheduleBlockRow(day, from, to, meta, slots) {
+    var startText = slots[from].start;
+    var endText = slots[to - 1].end;
+    var unitName = meta.unit || "";
+    var isNow = scheduleBlockIsNow(day, slots[from].startMinutes, slots[to - 1].endMinutes);
+    var rangeText = startText + " - " + endText;
+    var detail = unitName || "Sin unidad didáctica";
+    if (meta.room) detail += " · " + meta.room;
+
+    return el("button", {
+      type: "button",
+      class: "slot-row slot-block" + (isNow ? " is-now" : ""),
+      "aria-pressed": "true",
+      "aria-label": scheduleDayName(day) + ", " + startText + " a " + endText + ", " + (unitName || "sin unidad didáctica") +
+        ", " + (meta.room || "sin ambiente") + ". Ocupado. Toca para editar el bloque",
+      dataset: { day: String(day), from: String(from), to: String(to) },
+      on: { click: function () { openScheduleBlockEditor(day, from, to); } }
+    }, [
+      el("span", { class: "slot-time", text: startText }),
+      el("span", { class: "slot-body" }, [
+        el("span", { class: "slot-block-info" }, [
+          el("span", { class: "slot-block-unit", text: rangeText }),
+          el("span", { class: "slot-block-room", text: detail })
+        ]),
+        el("span", { class: "slot-block-link", "aria-hidden": "true" }, [icon("edit")])
+      ])
+    ]);
+  }
+
+  function scheduleBlockIsNow(day, startMinutes, endMinutes) {
+    if (day !== todayScheduleDay()) return false;
+    var now = new Date();
+    var nowMinutes = now.getHours() * 60 + now.getMinutes();
+    return nowMinutes >= startMinutes && nowMinutes < endMinutes;
+  }
+
+  // Entries that do not align to the 50-minute grid are never snapped or lost:
+  // they are listed under the grid and left exactly as they were stored.
+  function renderScheduleOffGrid(day) {
+    var slots = scheduleSlotBounds();
+    var custom = scheduleEntriesForDay(day).filter(function (entry) {
+      return !scheduleEntrySlotSpan(entry, slots);
+    });
+    if (custom.length === 0) return null;
+
+    var box = el("div", { class: "slot-offgrid" });
+    box.appendChild(el("p", { class: "slot-offgrid-title", text: "Bloques fuera de la grilla (se conservan tal cual)" }));
+    box.appendChild(el("p", { class: "helper", text: "Estos bloques no calzan en los cortes de 50 minutos, así que no se tocan al marcar casillas. Edítalos o impórtalos de nuevo si quieres reemplazarlos." }));
+    custom.forEach(function (entry) { box.appendChild(scheduleEntryRow(entry, false)); });
+    return box;
+  }
+
+  function focusScheduleSlot(day, index) {
+    var rows = document.querySelectorAll("#screen-schedule .slot-row");
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      if (parseInt(row.dataset.day, 10) !== day) continue;
+      var from = parseInt(row.dataset.from, 10);
+      var to = parseInt(row.dataset.to, 10);
+      if (index >= from && index < to) { row.focus(); return; }
+    }
+  }
+
   function renderScheduleToday() {
     var day = todayScheduleDay();
     var entries = scheduleEntriesForDay(day);
+    var now = new Date();
+    var nowMinutes = now.getHours() * 60 + now.getMinutes();
+    var current = null;
+    entries.forEach(function (entry) {
+      if (current) return;
+      var start = scheduleTimeToMinutes(entry.start);
+      var end = scheduleTimeToMinutes(entry.end);
+      if (start !== null && end !== null && nowMinutes >= start && nowMinutes < end) current = entry;
+    });
+
     var card = el("section", { class: "card" });
     card.appendChild(el("span", { class: "field-label" }, [icon("clock", "icon-lead"), "Hoy · " + scheduleDayName(day)]));
 
@@ -4308,7 +4721,7 @@
         ? "Hoy es fin de semana y no tienes clases registradas. Descansa."
         : "No tienes clases registradas para hoy." }));
     } else {
-      entries.forEach(function (entry) { card.appendChild(scheduleEntryRow(entry)); });
+      entries.forEach(function (entry) { card.appendChild(scheduleEntryRow(entry, entry === current)); });
     }
     return card;
   }
@@ -4335,7 +4748,7 @@
 
   // One schedule row. When the unit name matches an active cycle unit, the row
   // becomes a button that opens that unit's modal — the schedule/deadlines link.
-  function scheduleEntryRow(entry) {
+  function scheduleEntryRow(entry, isNow) {
     var unit = findUnitByName(entry.unit);
     var meta = entry.unit || "Sin unidad";
     if (entry.room) meta += " · " + entry.room;
@@ -4350,23 +4763,49 @@
       ])
     ];
 
+    if (isNow) {
+      content.push(el("span", { class: "schedule-entry-chip" }, [renderChip("En curso", "accent", "clock")]));
+    }
+
+    var className = "schedule-entry" + (isNow ? " is-now" : "");
+
     if (unit) {
       content.push(el("span", { class: "schedule-link", "aria-hidden": "true" }, [icon("chevron-right")]));
       return el("button", {
         type: "button",
-        class: "schedule-entry is-linked",
-        "aria-label": "Abrir la unidad didáctica " + unit.name,
+        class: className + " is-linked",
+        "aria-label": "Abrir la unidad didáctica " + unit.name + (isNow ? ". En curso ahora" : ""),
         on: { click: function () { openUnitModal(unit.id); } }
       }, content);
     }
-    return el("div", { class: "schedule-entry" }, content);
+    return el("div", { class: className }, content);
   }
 
-  function renderScheduleImportCard() {
+  function renderScheduleImportSection() {
     var card = el("section", { class: "card" });
-    card.appendChild(el("p", { class: "helper", text: "Puedes importar tu horario desde un archivo CSV, TSV o Excel (.xlsx / .xlsm), o pegar las filas copiadas de Excel o Google Sheets. El archivo de Excel se lee en tu propio navegador: no se sube a ningún servidor." }));
+    card.appendChild(el("p", { class: "helper", text: "Armar el horario tocando casillas es lo más rápido. Si ya lo tienes en un archivo, también puedes importarlo: acepta CSV, TSV o Excel (.xlsx / .xlsm), o filas pegadas desde Excel o Google Sheets. El archivo se lee en tu propio navegador, no se sube a ningún servidor." }));
+    card.appendChild(el("button", {
+      type: "button",
+      class: "btn btn-block",
+      "aria-expanded": scheduleImportOpen ? "true" : "false",
+      on: {
+        click: function () {
+          scheduleImportOpen = !scheduleImportOpen;
+          renderSchedule();
+          var button = document.querySelector('#screen-schedule [aria-expanded]');
+          if (button) button.focus();
+        }
+      }
+    }, [icon("schedule"), scheduleImportOpen ? "Ocultar importación" : "Importar desde archivo o pegado"]));
 
-    card.appendChild(el("div", { class: "field" }, [
+    if (scheduleImportOpen) card.appendChild(renderScheduleImportControls());
+    return card;
+  }
+
+  function renderScheduleImportControls() {
+    var box = el("div", { class: "schedule-preview" });
+
+    box.appendChild(el("div", { class: "field" }, [
       el("label", { for: "scheduleFile", text: "Archivo CSV, TSV o Excel" }),
       el("input", {
         class: "input", type: "file", id: "scheduleFile",
@@ -4375,7 +4814,7 @@
       })
     ]));
 
-    card.appendChild(el("div", { class: "field" }, [
+    box.appendChild(el("div", { class: "field" }, [
       el("label", { for: "schedulePaste", text: "O pega las filas" }),
       el("textarea", {
         class: "input schedule-paste", id: "schedulePaste", rows: "5",
@@ -4383,7 +4822,7 @@
       }, [schedulePreviewSource])
     ]));
 
-    card.appendChild(el("button", {
+    box.appendChild(el("button", {
       type: "button", class: "btn btn-primary btn-block",
       on: { click: handleScheduleParse }
     }, [
@@ -4391,8 +4830,126 @@
       "Previsualizar importación"
     ]));
 
-    if (schedulePreview) card.appendChild(renderSchedulePreview(schedulePreview));
-    return card;
+    box.appendChild(el("button", {
+      type: "button", class: "btn btn-block mt-12",
+      on: { click: downloadScheduleTemplate }
+    }, [
+      icon("note"),
+      "Descargar plantilla de ejemplo"
+    ]));
+
+    if (schedulePreview) box.appendChild(renderSchedulePreview(schedulePreview));
+    return box;
+  }
+
+  function openScheduleBlockEditor(day, from, to) {
+    editingScheduleBlock = { day: day, from: from, to: to };
+    renderScheduleBlockEditor();
+    openModal(document.getElementById("scheduleBlockModal"));
+  }
+
+  function renderScheduleBlockEditor() {
+    if (!editingScheduleBlock) return;
+    var day = editingScheduleBlock.day;
+    var from = editingScheduleBlock.from;
+    var to = editingScheduleBlock.to;
+    var slots = scheduleSlotBounds();
+    var occupancy = scheduleSlotOccupancy(day);
+    var meta = occupancy[from] || { unit: "", room: "" };
+    var startText = slots[from].start;
+    var endText = slots[to - 1].end;
+
+    document.getElementById("scheduleBlockModalTitle").textContent = "Bloque · " + scheduleDayName(day);
+    document.getElementById("scheduleBlockModalSub").textContent = startText + " - " + endText;
+
+    var body = document.getElementById("scheduleBlockModalBody");
+    clear(body);
+
+    var unit = meta.unit ? findUnitByName(meta.unit) : null;
+    if (unit) {
+      body.appendChild(el("button", {
+        type: "button", class: "btn btn-primary btn-block",
+        on: {
+          click: function () {
+            closeModal(document.getElementById("scheduleBlockModal"));
+            openUnitModal(unit.id);
+          }
+        }
+      }, [icon("units"), "Ver " + unit.name]));
+    }
+
+    var unitSelect = el("select", { class: "select", id: "scheduleBlockUnit" }, [
+      el("option", { value: "", text: "Sin unidad didáctica" })
+    ]);
+    activeUnits().forEach(function (activeUnit) {
+      var option = el("option", { value: activeUnit.name, text: activeUnit.name });
+      if (meta.unit && normalizeToken(activeUnit.name) === normalizeToken(meta.unit)) option.selected = true;
+      unitSelect.appendChild(option);
+    });
+    body.appendChild(el("div", { class: "field" }, [
+      el("label", { for: "scheduleBlockUnit" }, [icon("units", "icon-lead"), "Unidad didáctica (opcional)"]),
+      unitSelect,
+      el("p", { class: "helper", text: "Elige la unidad que se dicta en este bloque. Si no la sabes, déjalo sin unidad: es normal." })
+    ]));
+
+    body.appendChild(el("div", { class: "field" }, [
+      el("label", { for: "scheduleBlockRoom" }, [icon("pin", "icon-lead"), "Ambiente o aula (opcional)"]),
+      el("input", {
+        class: "input", type: "text", id: "scheduleBlockRoom", maxlength: "60",
+        autocomplete: "off", placeholder: "Ej. Aula 302, Lab 3", value: meta.room || ""
+      })
+    ]));
+
+    body.appendChild(el("span", { class: "field-label", text: "Casillas de este bloque" }));
+    var chipList = el("div", { class: "slot-chip-list", role: "group", "aria-label": "Casillas de este bloque" });
+    for (var chipIndex = from; chipIndex < to; chipIndex++) {
+      (function (slotIndex) {
+        chipList.appendChild(el("button", {
+          type: "button",
+          class: "slot-chip",
+          "aria-pressed": "true",
+          "aria-label": "Quitar la casilla " + slots[slotIndex].start + " a " + slots[slotIndex].end,
+          text: slots[slotIndex].start,
+          on: { click: function () { removeScheduleBlockSlot(day, slotIndex); } }
+        }));
+      })(chipIndex);
+    }
+    body.appendChild(chipList);
+    body.appendChild(el("p", { class: "helper", text: "Toca una casilla para quitarla del bloque. Las casillas contiguas se unen en un solo bloque." }));
+
+    body.appendChild(el("div", { class: "actions-row mt-16" }, [
+      el("button", { type: "button", class: "btn btn-primary", on: { click: saveScheduleBlock } }, [icon("check"), "Guardar bloque"]),
+      el("button", { type: "button", class: "btn btn-danger", on: { click: removeScheduleBlock } }, [icon("trash"), "Quitar bloque"])
+    ]));
+  }
+
+  function removeScheduleBlockSlot(day, index) {
+    toggleScheduleSlot(day, index);
+    closeModal(document.getElementById("scheduleBlockModal"));
+  }
+
+  function saveScheduleBlock() {
+    if (!editingScheduleBlock) return;
+    var select = document.getElementById("scheduleBlockUnit");
+    var roomInput = document.getElementById("scheduleBlockRoom");
+    applyScheduleBlockMeta(
+      editingScheduleBlock.day,
+      editingScheduleBlock.from,
+      editingScheduleBlock.to,
+      select ? select.value : "",
+      roomInput ? roomInput.value.trim() : ""
+    );
+    saveState();
+    closeModal(document.getElementById("scheduleBlockModal"));
+    renderSchedule();
+  }
+
+  function removeScheduleBlock() {
+    if (!editingScheduleBlock) return;
+    clearScheduleBlock(editingScheduleBlock.day, editingScheduleBlock.from, editingScheduleBlock.to);
+    saveState();
+    closeModal(document.getElementById("scheduleBlockModal"));
+    renderSchedule();
   }
 
   function renderSchedulePreview(preview) {
@@ -4484,6 +5041,7 @@
   function handleScheduleParse() {
     var textarea = document.getElementById("schedulePaste");
     var text = textarea ? textarea.value : "";
+    scheduleImportOpen = true;
     schedulePreviewSource = text;
     schedulePreview = parseScheduleText(text);
     renderSchedule();
@@ -4492,6 +5050,7 @@
   // Excel workbooks are ZIP archives: read the bytes and run the native reader.
   // Every failure mode is mapped to Spanish copy, never a crash.
   function handleExcelFile(file, input) {
+    scheduleImportOpen = true;
     if (!supportsDeflateRaw()) {
       schedulePreview = null;
       schedulePreviewSource = "";
@@ -4529,6 +5088,7 @@
     var input = event.target;
     var file = input.files && input.files[0];
     if (!file) return;
+    scheduleImportOpen = true;
 
     if (/\.(xlsx|xlsm|xls)$/i.test(file.name || "")) {
       handleExcelFile(file, input);
@@ -4558,6 +5118,7 @@
     state.schedule = schedulePreview.rows.map(normalizeScheduleEntry);
     schedulePreview = null;
     schedulePreviewSource = "";
+    scheduleImportOpen = false;
     saveState();
     renderSchedule();
   }
@@ -5371,6 +5932,7 @@
     }
     if (modal.id === "unitModal") activeUnitId = null;
     if (modal.id === "deadlineModal") editingDeadlineId = null;
+    if (modal.id === "scheduleBlockModal") editingScheduleBlock = null;
     if (wasOpen) releaseModalHistory();
   }
 
@@ -5483,6 +6045,12 @@
     });
     document.getElementById("deadlineModalClose").addEventListener("click", function () {
       closeModal(document.getElementById("deadlineModal"));
+    });
+    document.getElementById("scheduleBlockModalBack").addEventListener("click", function () {
+      closeModal(document.getElementById("scheduleBlockModal"));
+    });
+    document.getElementById("scheduleBlockModalClose").addEventListener("click", function () {
+      closeModal(document.getElementById("scheduleBlockModal"));
     });
     document.getElementById("deadlineFormCancel").addEventListener("click", function () {
       closeModal(document.getElementById("deadlineModal"));
