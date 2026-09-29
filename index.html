@@ -1065,6 +1065,13 @@
 
   .schedule-error-list li { color: var(--danger); font-weight: 600; }
 
+  .schedule-preview-warning {
+    flex: 0 0 100%;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--warning);
+  }
+
   /* =========================================================
      18. Bottom tabs
      ========================================================= */
@@ -2487,12 +2494,16 @@
     return null;
   }
 
-  // Grid cells carry one free-text time range ("8:00 - 11:20"). Peruvian
-  // timetables drop the meridiem, so the hour is ambiguous. The documented and
-  // visibly-stated assumption: a 24-hour-looking time is taken as-is, an hour
-  // from 1 to 6 becomes PM (+12), everything else stays AM. The original text is
-  // preserved separately in `label`, never lost to this interpretation.
-  function normalizeGridScheduleTime(raw) {
+  // Grid cells carry one free-text time range ("8:00 - 11:20") and Peruvian
+  // timetables drop the meridiem, so an hour from 1 to 12 has two possible
+  // readings: the AM one and the PM one. Hours 0 and 13-23 are already 24-hour
+  // and have a single reading. The base reading applies the documented default
+  // (hour 1-6 is taken as PM), but the final choice is made per day by
+  // resolveGridScheduleDay, which keeps the whole day chronological. The original
+  // text is preserved separately in `label`, never lost to this interpretation.
+  // Returns { candidates, base } in minutes since midnight, or null when the text
+  // is not a readable time.
+  function gridScheduleTimeCandidates(raw) {
     var value = String(raw).trim().toLowerCase().replace(/\s+/g, "");
     if (value === "") return null;
     var match = value.match(/^(\d{1,2})(?::(\d{2}))?h?(?:rs)?$/);
@@ -2500,21 +2511,103 @@
     var hour = parseInt(match[1], 10);
     var minute = match[2] !== undefined ? parseInt(match[2], 10) : 0;
     if (hour > 23 || minute > 59) return null;
-    if (hour >= 1 && hour <= 6) hour += 12;
-    return pad2(hour) + ":" + pad2(minute);
+
+    var candidates;
+    if (hour >= 1 && hour <= 12) {
+      // 12 AM is midnight and 12 PM is noon.
+      var amHour = hour === 12 ? 0 : hour;
+      var pmHour = hour === 12 ? 12 : hour + 12;
+      candidates = [amHour * 60 + minute, pmHour * 60 + minute];
+    } else {
+      candidates = [hour * 60 + minute];
+    }
+
+    var baseHour = (hour >= 1 && hour <= 6) ? hour + 12 : hour;
+    return { candidates: candidates, base: baseHour * 60 + minute };
   }
 
-  function parseGridScheduleTimeRange(raw) {
+  // Split a grid cell into its raw start/end text without interpreting the
+  // meridiem yet. Returns { startRaw, endRaw } or null when there is nothing.
+  function splitGridScheduleRange(raw) {
     var value = String(raw).trim();
     if (value === "") return null;
     var pieces = value
       .split(/\s*(?:-|[\u2013\u2014]|\b(?:a|to)\b)\s*/i)
       .filter(function (piece) { return piece.trim() !== ""; });
     if (pieces.length === 0) return null;
-    var start = normalizeGridScheduleTime(pieces[0]);
-    if (!start) return null;
-    var end = pieces.length > 1 ? normalizeGridScheduleTime(pieces[1]) : null;
-    return { start: start, end: end };
+    return { startRaw: pieces[0], endRaw: pieces.length > 1 ? pieces[1] : null };
+  }
+
+  function minutesToScheduleTime(minutes) {
+    return pad2(Math.floor(minutes / 60)) + ":" + pad2(minutes % 60);
+  }
+
+  // Pick the start reading that keeps the day moving forward: the base reading
+  // when it is at or after the previous block, otherwise the smallest reading
+  // that still is. Falls back to the base reading and flags it when no reading
+  // can follow the previous block.
+  function chooseGridScheduleStart(info, prevEnd) {
+    if (info.base >= prevEnd) return { minutes: info.base, fellBack: false };
+    var following = info.candidates.filter(function (m) { return m >= prevEnd; });
+    if (following.length === 0) return { minutes: info.base, fellBack: true };
+    following.sort(function (a, b) { return a - b; });
+    return { minutes: following[0], fellBack: false };
+  }
+
+  // Pick the smallest end reading strictly after the start. Falls back to the
+  // base reading and flags it when none is.
+  function chooseGridScheduleEnd(info, startMinutes) {
+    var following = info.candidates.filter(function (m) { return m > startMinutes; });
+    if (following.length === 0) return { minutes: info.base, fellBack: true };
+    following.sort(function (a, b) { return a - b; });
+    return { minutes: following[0], fellBack: false };
+  }
+
+  var GRID_SEQUENCE_WARNING = "No pude ubicar este bloque después del anterior. Revisa la hora.";
+  var GRID_ORDER_WARNING = "La hora de fin no es posterior a la de inicio. Revisa el texto.";
+
+  // Resolve one day's blocks in row order. `blocks` is [{ label, startRaw,
+  // endRaw }] in row order. Each block starts at or after the previous block's
+  // end and ends after it starts; a block that cannot satisfy that keeps its
+  // resolved times (or null) and carries a warning instead of a nonsense range.
+  function resolveGridScheduleDay(blocks) {
+    var rows = [];
+    var prevEnd = 0;
+    blocks.forEach(function (block) {
+      var startInfo = block.startRaw ? gridScheduleTimeCandidates(block.startRaw) : null;
+      var endInfo = block.endRaw ? gridScheduleTimeCandidates(block.endRaw) : null;
+      var start = null;
+      var end = null;
+      var fellBack = false;
+
+      if (startInfo) {
+        var startChoice = chooseGridScheduleStart(startInfo, prevEnd);
+        start = startChoice.minutes;
+        fellBack = startChoice.fellBack;
+      }
+
+      if (start !== null && endInfo) {
+        var endChoice = chooseGridScheduleEnd(endInfo, start);
+        end = endChoice.minutes;
+        fellBack = fellBack || endChoice.fellBack;
+      }
+
+      var warning = null;
+      if (start !== null && end !== null && end <= start) {
+        warning = GRID_ORDER_WARNING;
+      } else if (fellBack) {
+        warning = GRID_SEQUENCE_WARNING;
+      }
+
+      rows.push({
+        start: start === null ? null : minutesToScheduleTime(start),
+        end: end === null ? null : minutesToScheduleTime(end),
+        warning: warning
+      });
+
+      if (end !== null) prevEnd = end;
+    });
+    return rows;
   }
 
   // Map header cells to column indexes. Returns how many columns were recognised.
@@ -2618,12 +2711,17 @@
 
   // Transpose a detected grid: for each day column, every non-empty cell below
   // the day row becomes one entry for that day. The raw cell text rides along in
-  // `label`; start/end are best-effort and may be null.
+  // `label`; start/end are best-effort and may be null. Times without AM/PM are
+  // inferred per day from the row order of its blocks, never block by block.
   function scheduleFromGrid(rows, grid) {
     var result = { rows: [], errors: [], headerFound: false, assumedOrder: false, grid: true };
     Object.keys(grid.columnDay).forEach(function (key) {
       var column = parseInt(key, 10);
       var day = grid.columnDay[key];
+
+      // Collect the day's blocks in row order before resolving, so the meridiem
+      // of each block can be inferred from the previous block's end.
+      var blocks = [];
       for (var rowIndex = grid.rowIndex + 1; rowIndex < rows.length; rowIndex++) {
         var fields = rows[rowIndex];
         if (!matrixRowHasContent(fields)) continue;
@@ -2631,16 +2729,26 @@
         if (raw === null || raw === undefined) continue;
         var label = String(raw).trim();
         if (label === "") continue;
-        var range = parseGridScheduleTimeRange(label);
-        result.rows.push({
-          day: day,
-          start: range && range.start ? range.start : null,
-          end: range && range.end ? range.end : null,
-          unit: "",
-          room: "",
-          label: label
+        var range = splitGridScheduleRange(label);
+        blocks.push({
+          label: label,
+          startRaw: range ? range.startRaw : null,
+          endRaw: range ? range.endRaw : null
         });
       }
+
+      var resolved = resolveGridScheduleDay(blocks);
+      resolved.forEach(function (item, index) {
+        result.rows.push({
+          day: day,
+          start: item.start,
+          end: item.end,
+          unit: "",
+          room: "",
+          label: blocks[index].label,
+          warning: item.warning
+        });
+      });
     });
     result.rows.sort(function (a, b) {
       if (a.day !== b.day) return a.day - b.day;
@@ -4298,7 +4406,7 @@
       ]));
       box.appendChild(el("div", { class: "grade-note warning" }, [
         icon("alert"),
-        el("span", { text: "Las horas sin AM/PM se interpretaron como PM cuando van de 1 a 6 (ej. 1:00 a 13:00)." })
+        el("span", { text: "Las horas sin AM/PM se infieren según el orden de los bloques del día. Siempre verás el texto original de cada celda." })
       ]));
     }
 
@@ -4318,10 +4426,14 @@
       var list = el("ul", { class: "schedule-preview-list" });
       preview.rows.slice(0, 50).forEach(function (entry) {
         var timeText = entry.label ? entry.label : ((entry.start || "") + " - " + (entry.end || ""));
-        list.appendChild(el("li", {}, [
+        var item = el("li", {}, [
           el("span", { class: "schedule-preview-day", text: scheduleDayName(entry.day) }),
           el("span", { class: "schedule-preview-text", text: timeText + " · " + (entry.unit || "Sin unidad") + (entry.room ? " · " + entry.room : "") })
-        ]));
+        ]);
+        if (entry.warning) {
+          item.appendChild(el("span", { class: "schedule-preview-warning", text: entry.warning }));
+        }
+        list.appendChild(item);
       });
       if (preview.rows.length > 50) {
         list.appendChild(el("li", {}, [
