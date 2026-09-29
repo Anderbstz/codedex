@@ -837,46 +837,6 @@
   }
 
   /* =========================================================
-     17. Canvas attempts tracker
-     ========================================================= */
-  .attempts {
-    display: flex;
-    gap: 8px;
-    margin: 4px 0 12px;
-  }
-
-  .attempt-btn {
-    flex: 1 1 0;
-    border: 1px solid var(--border-strong);
-    background: var(--surface);
-    color: var(--text-muted);
-    border-radius: var(--radius-sm);
-    padding: 12px 6px;
-    font-size: 13px;
-    font-weight: 700;
-    text-align: center;
-    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-  }
-
-  .attempt-btn .attempt-num { display: block; font-size: 16px; }
-  .attempt-btn .attempt-state { display: block; font-size: 10.5px; font-weight: 600; margin-top: 3px; letter-spacing: 0.03em; text-transform: uppercase; }
-
-  .attempt-btn.used {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--accent-contrast);
-  }
-
-  .score-line {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-  }
-
-  .score-line .input { max-width: 130px; }
-
-  /* =========================================================
      17b. Unit grade summary (assignment scores, weighted)
      ========================================================= */
   .grade-grid {
@@ -1124,10 +1084,6 @@
     <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
     <path d="M12 9v4"></path>
     <path d="M12 17h.01"></path>
-  </symbol>
-  <symbol id="icon-retry" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
-    <path d="M3 3v5h5"></path>
   </symbol>
   <symbol id="icon-award" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <circle cx="12" cy="8" r="6"></circle>
@@ -2058,7 +2014,6 @@
     }
   };
 
-  var MAX_ATTEMPTS = 3;
   var MS_PER_DAY = 86400000;
   var NOTIFY_THRESHOLD_MS = 24 * 3600000;
 
@@ -2074,7 +2029,7 @@
   }
 
   // Build the unit list for a program/cycle on demand. Ids are cycle-scoped and
-  // deterministic, so deadlines and Canvas entries keep resolving across reloads.
+  // deterministic, so deadlines keep resolving across reloads.
   function deriveUnits(programId, cycleNumber) {
     var program = PROGRAMS[programId];
     if (!program) return [];
@@ -2105,7 +2060,6 @@
       theme: "light",
       target: DEFAULT_TARGET, // user-chosen target grade on the 0-20 scale
       deadlines: [],
-      canvas: {}, // unitId -> { attemptsUsed: 0..3, bestScore: number|null }
       notifyEnabled: false, // ask before a deadline crosses the 24 h threshold
       notified: {} // deadlineId -> dueAt already notified, so it never repeats
     };
@@ -2177,23 +2131,6 @@
         };
       }).filter(function (d) { return d.unitId !== null; });
     }
-    if (parsed.canvas && typeof parsed.canvas === "object") {
-      var normalizedCanvas = {};
-      Object.keys(parsed.canvas).forEach(function (key) {
-        normalizedCanvas[migrateLegacyUnitId(key)] = parsed.canvas[key];
-      });
-      activeUnits().forEach(function (unit) {
-        var entry = normalizedCanvas[unit.id];
-        if (!entry || typeof entry !== "object") return;
-        var used = Number(entry.attemptsUsed);
-        var score = entry.bestScore;
-        state.canvas[unit.id] = {
-          attemptsUsed: isFinite(used) ? Math.min(MAX_ATTEMPTS, Math.max(0, Math.round(used))) : 0,
-          bestScore: typeof score === "number" && isFinite(score) ? score : null
-        };
-      });
-    }
-
     if (parsed.notifyEnabled === true) {
       state.notifyEnabled = true;
     }
@@ -2230,7 +2167,7 @@
   }
 
   // Pre-registry ids were plain "u1".."u8" and all belong to cycle 6 of the only
-  // verified program. Map them forward so saved deadlines and Canvas entries survive.
+  // verified program. Map them forward so saved deadlines survive.
   function migrateLegacyUnitId(unitId) {
     if (!/^u\d+$/.test(unitId)) return unitId;
     var migrated = "c" + LEGACY_UNIT_CYCLE + "-" + unitId;
@@ -2454,13 +2391,6 @@
     }).length;
   }
 
-  function getCanvas(unitId) {
-    if (!state.canvas[unitId]) {
-      state.canvas[unitId] = { attemptsUsed: 0, bestScore: null };
-    }
-    return state.canvas[unitId];
-  }
-
   function getSortedDeadlines() {
     return state.deadlines.slice().sort(function (a, b) {
       return new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime();
@@ -2477,9 +2407,7 @@
      Grade computation — assignment scores, weighted per unit
      ========================================================= */
   // Assignment score (deadline.score) is the grade the teacher gave on a
-  // deliverable. It is a different concept from the Canvas attempts tracker
-  // (state.canvas[unitId].bestScore), which records the best of up to three
-  // assessment attempts. The two never share storage or math.
+  // deliverable. It is the only per-assignment grade the weighted average uses.
   function clampGrade(value) {
     if (typeof value !== "number" || !isFinite(value)) return null;
     return Math.min(GRADE_SCALE_MAX, Math.max(0, value));
@@ -3275,8 +3203,6 @@
 
   function unitCard(unit) {
     var pending = pendingCountForUnit(unit.id);
-    var canvas = getCanvas(unit.id);
-    var remaining = MAX_ATTEMPTS - canvas.attemptsUsed;
     var grade = computeUnitGrade(unitDeadlines(unit.id), state.target);
 
     var stats = el("div", { class: "unit-stats" }, [
@@ -3286,14 +3212,7 @@
         pending === 0 ? "check" : "clock"
       ),
       // Only when computable: never show a zero average for a unit with no grades.
-      grade.hasAverage ? renderChip("Promedio " + formatNumber(grade.average), "accent", "award") : null,
-      renderChip(
-        canvas.attemptsUsed === 0
-          ? "Canvas sin registrar"
-          : "Canvas " + canvas.attemptsUsed + "/" + MAX_ATTEMPTS + (canvas.bestScore !== null ? " · mejor " + canvas.bestScore : ""),
-        canvas.attemptsUsed === 0 ? "neutral" : (remaining === 0 ? "danger" : "accent"),
-        "retry"
-      )
+      grade.hasAverage ? renderChip("Promedio " + formatNumber(grade.average), "accent", "award") : null
     ]);
 
     return el("button", {
@@ -3546,7 +3465,7 @@
     // --- Reset ---
     var resetCard = el("section", { class: "card" });
     resetCard.appendChild(el("span", { class: "field-label", text: "Zona de riesgo" }));
-    resetCard.appendChild(el("p", { class: "helper", text: "Borra entregas, intentos de Canvas y configuración guardada en este navegador." }));
+    resetCard.appendChild(el("p", { class: "helper", text: "Borra entregas y configuración guardada en este navegador." }));
     resetCard.appendChild(el("button", {
       type: "button", class: "btn btn-danger mt-12",
       on: { click: resetAllData }
@@ -3577,71 +3496,6 @@
     var body = document.getElementById("unitModalBody");
     clear(body);
 
-    var canvas = getCanvas(unit.id);
-    var remaining = MAX_ATTEMPTS - canvas.attemptsUsed;
-
-    var tracker = el("section", { class: "card" }, [
-      el("span", { class: "field-label" }, [icon("retry", "icon-lead"), "Intentos en Canvas"]),
-      el("p", { class: "helper", style: "margin-top: 0;", text: "Marca los intentos que ya usaste. Máximo 3 por evaluación." })
-    ]);
-
-    var attempts = el("div", { class: "attempts" });
-    for (var i = 1; i <= MAX_ATTEMPTS; i++) {
-      (function (attemptNumber) {
-        var used = attemptNumber <= canvas.attemptsUsed;
-        attempts.appendChild(el("button", {
-          type: "button",
-          class: "attempt-btn" + (used ? " used" : ""),
-          "aria-pressed": used ? "true" : "false",
-          "aria-label": "Intento " + attemptNumber + (used ? " usado" : " disponible"),
-          on: {
-            click: function () {
-              canvas.attemptsUsed = canvas.attemptsUsed === attemptNumber ? attemptNumber - 1 : attemptNumber;
-              saveState();
-              renderUnitModal();
-              renderUnits();
-              renderDashboard();
-            }
-          }
-        }, [
-          el("span", { class: "attempt-num", text: String(attemptNumber) }),
-          el("span", { class: "attempt-state", text: used ? "usado" : "libre" })
-        ]));
-      })(i);
-    }
-    tracker.appendChild(attempts);
-
-    var scoreInput = el("input", {
-      class: "input", type: "number", min: "0", max: "20", step: "0.5",
-      inputmode: "decimal", placeholder: "0 - 20",
-      value: canvas.bestScore === null ? "" : String(canvas.bestScore),
-      "aria-label": "Mejor nota obtenida",
-      on: {
-        input: function (event) {
-          var value = parseFloat(event.target.value);
-          canvas.bestScore = isFinite(value) ? Math.min(20, Math.max(0, value)) : null;
-          saveState();
-          updateUnitScoreSummary();
-        }
-      }
-    });
-
-    tracker.appendChild(el("div", { class: "score-line" }, [
-      el("label", { class: "field-label", for: "unitBestScore", style: "margin: 0;" }, [icon("award", "icon-lead"), "Mejor nota"]),
-      scoreInput
-    ]));
-    scoreInput.id = "unitBestScore";
-
-    tracker.appendChild(el("p", {
-      class: "helper",
-      id: "unitScoreSummary",
-      text: canvasSummaryText(canvas, remaining)
-    }));
-
-    tracker.appendChild(el("p", { class: "helper", text: "Regla de Canvas: la nota final es la más alta de tus intentos, no la última. Cada evaluación tiene fecha límite y ventana de disponibilidad (tiempo típico: 15 minutos)." }));
-
-    body.appendChild(tracker);
-
     body.appendChild(renderUnitGradeCard(unit));
 
     body.appendChild(el("h3", { class: "section-title", text: "Entregas de esta unidad" }));
@@ -3661,25 +3515,6 @@
         body.appendChild(deadlineCard(deadline, now, { inlineGrade: true }));
       });
     }
-  }
-
-  function canvasSummaryText(canvas, remaining) {
-    if (canvas.attemptsUsed === 0) {
-      return "Te quedan 3 intentos. Aún no registras intentos usados.";
-    }
-    var base = "Te quedan " + remaining + (remaining === 1 ? " intento" : " intentos") + ".";
-    if (canvas.bestScore === null) return base + " Registra tu mejor nota.";
-    if (remaining === 0) {
-      return base + " Mejor nota: " + canvas.bestScore + ". Esa es la que cuenta.";
-    }
-    return base + " Mejor nota: " + canvas.bestScore + ".";
-  }
-
-  function updateUnitScoreSummary() {
-    var summary = document.getElementById("unitScoreSummary");
-    if (!summary || !activeUnitId) return;
-    var canvas = getCanvas(activeUnitId);
-    summary.textContent = canvasSummaryText(canvas, MAX_ATTEMPTS - canvas.attemptsUsed);
   }
 
   // Grade summary card for the unit modal. Keeps the three numbers distinct and
@@ -3975,8 +3810,8 @@
   // Apply a new program/cycle. If the change would orphan saved deadlines, warn
   // first and only proceed on explicit confirmation. Declining leaves state
   // untouched, and renderSettings() rebuilds the selects from that state, so the
-  // controls revert visually. On confirmation the orphaned deadlines and their
-  // Canvas entries are removed (invisible data is worse than an explicit delete).
+  // controls revert visually. On confirmation the orphaned deadlines are removed
+  // (invisible data is worse than an explicit delete).
   function applyCycleContext(programId, cycleNumber) {
     var program = PROGRAMS[programId];
     if (!program || !program.cycles[cycleNumber]) { renderSettings(); return; }
@@ -3996,9 +3831,6 @@
         return;
       }
       state.deadlines = state.deadlines.filter(function (d) { return nextIds[d.unitId]; });
-      Object.keys(state.canvas).forEach(function (unitId) {
-        if (!nextIds[unitId]) delete state.canvas[unitId];
-      });
     }
 
     state.programId = programId;
@@ -4010,7 +3842,7 @@
   }
 
   function resetAllData() {
-    if (!window.confirm("Se borrarán todas tus entregas, intentos de Canvas y configuración. ¿Continuar?")) return;
+    if (!window.confirm("Se borrarán todas tus entregas y tu configuración. ¿Continuar?")) return;
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch (error) {
