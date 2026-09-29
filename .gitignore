@@ -1,6 +1,17 @@
 # Local tooling artifacts (skill registry, caches) — not project content
 .atl/
 
+# Personal documents — working notes, strategy and submission drafts.
+# Kept local on purpose: not part of the shipped project.
+PLAN.md
+
+# Personal schedule exports (Google Sheets / Excel). These are the user's own
+# timetable files used to test the importer, not project content.
+Horario.xlsx
+*.xlsx
+*.xls
+*.xlsm
+
 # OS noise
 Thumbs.db
 desktop.ini
