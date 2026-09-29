@@ -960,6 +960,112 @@
   }
 
   /* =========================================================
+     17d. Class schedule (horario)
+     ========================================================= */
+  .schedule-entry {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    padding: 9px 11px;
+    font: inherit;
+    color: inherit;
+  }
+
+  .schedule-entry + .schedule-entry { margin-top: 8px; }
+
+  button.schedule-entry { cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease; }
+  button.schedule-entry:hover { border-color: var(--accent); }
+  button.schedule-entry:active { transform: scale(0.99); }
+  .schedule-entry.is-linked { border-left-color: var(--accent); background: var(--accent-soft); }
+
+  .schedule-time {
+    flex: 0 0 auto;
+    font-size: 12.5px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    white-space: nowrap;
+  }
+
+  .schedule-info { flex: 1 1 auto; min-width: 0; }
+
+  .schedule-unit {
+    display: block;
+    font-size: 13.5px;
+    font-weight: 600;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
+
+  .schedule-link { flex: 0 0 auto; color: var(--accent); }
+
+  .schedule-day + .schedule-day {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px dashed var(--border);
+  }
+
+  .schedule-day:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+
+  .schedule-day-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+
+  .schedule-day-name { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
+  .schedule-day-count { font-size: 11.5px; font-weight: 700; color: var(--text-muted); }
+  .schedule-day-empty { margin: 0; font-size: 12.5px; color: var(--text-faint); }
+
+  .schedule-paste {
+    width: 100%;
+    min-height: 96px;
+    resize: vertical;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .schedule-preview {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px dashed var(--border);
+  }
+
+  .schedule-preview-list,
+  .schedule-error-list {
+    list-style: none;
+    margin: 10px 0 0;
+    padding: 0;
+  }
+
+  .schedule-preview-list li,
+  .schedule-error-list li {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 6px 0;
+    border-top: 1px dashed var(--border);
+    font-size: 12.5px;
+  }
+
+  .schedule-preview-list li:first-child,
+  .schedule-error-list li:first-child { border-top: 0; }
+
+  .schedule-preview-day { flex: 0 0 84px; font-weight: 700; }
+  .schedule-preview-text { flex: 1 1 auto; overflow-wrap: anywhere; }
+
+  .schedule-error-list li { color: var(--danger); font-weight: 600; }
+
+  /* =========================================================
      18. Bottom tabs
      ========================================================= */
   .tabbar {
@@ -1125,6 +1231,14 @@
     <path d="M22 12h-6l-2 3h-4l-2-3H2"></path>
     <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z"></path>
   </symbol>
+  <symbol id="icon-schedule" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="4" width="18" height="18" rx="2"></rect>
+    <path d="M16 2v4"></path>
+    <path d="M8 2v4"></path>
+    <path d="M3 10h18"></path>
+    <circle cx="16.5" cy="16.5" r="4"></circle>
+    <path d="M16.5 14.8v1.9l1.3.9"></path>
+  </symbol>
 </svg>
 
 <header class="app-header">
@@ -1141,6 +1255,7 @@
 <main class="app">
   <section class="screen" id="screen-dashboard" aria-labelledby="tab-dashboard"></section>
   <section class="screen" id="screen-deadlines" aria-labelledby="tab-deadlines"></section>
+  <section class="screen" id="screen-schedule" aria-labelledby="tab-schedule"></section>
   <section class="screen" id="screen-units" aria-labelledby="tab-units"></section>
   <section class="screen" id="screen-settings" aria-labelledby="tab-settings"></section>
 </main>
@@ -1154,6 +1269,10 @@
     <button class="tab" id="tab-deadlines" role="tab" aria-selected="false" data-screen="deadlines">
       <span class="tab-icon" aria-hidden="true"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-deadlines"></use></svg></span>
       <span>Entregas</span>
+    </button>
+    <button class="tab" id="tab-schedule" role="tab" aria-selected="false" data-screen="schedule">
+      <span class="tab-icon" aria-hidden="true"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-schedule"></use></svg></span>
+      <span>Horario</span>
     </button>
     <button class="tab" id="tab-units" role="tab" aria-selected="false" data-screen="units">
       <span class="tab-icon" aria-hidden="true"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-units"></use></svg></span>
@@ -1252,14 +1371,21 @@
   var DEFAULT_TARGET = 13; // User-chosen target grade (0-20). Not a passing grade.
   var GRADE_SCALE_MAX = 20;
 
-  // Tecsup-only academic constants. The 18-week structure is institutional and
-  // shared by every cycle; it is never derived from the user.
+  // Tecsup academic constants. Tecsup's Reglamento Institucional (Art. 37) says a
+  // period is 18 weeks: 16 of classes plus 2 of final assessments. The enrolled
+  // reality reported by the user is 17 weeks (real activity wraps by week 15-16 and
+  // week 17 is the last one). Because the official source and the enrolled reality
+  // disagree, totalWeeks is user-configurable and defaults to the real value (17).
+  // classWeeks stays 16; the final weeks are always the last week of the configured
+  // cycle, so they are derived from totalWeeks, never hardcoded.
   var CYCLE = {
-    totalWeeks: 18,
+    totalWeeks: 17,
     classWeeks: 16,
-    finalWeeks: [17, 18],
     campusOptions: ["Lima", "Arequipa", "Trujillo"]
   };
+
+  var MIN_TOTAL_WEEKS = 1;
+  var MAX_TOTAL_WEEKS = 30;
 
   var TRACK_ORDER = ["employability", "specific"];
 
@@ -2062,10 +2188,12 @@
       cycleNumber: DEFAULT_CYCLE_NUMBER,
       campus: null,
       startDate: null, // ISO "YYYY-MM-DD" — configured by the user, never hardcoded
+      totalWeeks: CYCLE.totalWeeks, // cycle length in weeks — user-configurable
       theoryAssessmentWeeks: DEFAULT_THEORY_WEEKS.slice(),
       theme: "light",
       target: DEFAULT_TARGET, // user-chosen target grade on the 0-20 scale
       deadlines: [],
+      schedule: [], // imported class schedule: { day, start, end, unit, room }
       notifyEnabled: false, // ask before a deadline crosses the 24 h threshold
       notified: {} // deadlineId -> dueAt already notified, so it never repeats
     };
@@ -2099,6 +2227,9 @@
     if (typeof parsed.startDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.startDate)) {
       state.startDate = parsed.startDate;
     }
+    // Missing or invalid cycle length falls back to the real default (17). Loaded
+    // before the theory weeks so their validation uses the configured cycle length.
+    state.totalWeeks = sanitizeTotalWeeks(parsed.totalWeeks);
     if (Array.isArray(parsed.theoryAssessmentWeeks)) {
       state.theoryAssessmentWeeks = sanitizeWeeks(parsed.theoryAssessmentWeeks);
     }
@@ -2136,6 +2267,11 @@
           score: typeof d.score === "number" && isFinite(d.score) ? clampGrade(d.score) : null
         };
       }).filter(function (d) { return d.unitId !== null; });
+    }
+    if (Array.isArray(parsed.schedule)) {
+      state.schedule = parsed.schedule
+        .filter(isValidScheduleEntry)
+        .map(normalizeScheduleEntry);
     }
     if (parsed.notifyEnabled === true) {
       state.notifyEnabled = true;
@@ -2186,12 +2322,271 @@
     return list
       .map(function (value) { return parseInt(value, 10); })
       .filter(function (value) {
-        if (!isFinite(value) || value < 1 || value > CYCLE.classWeeks) return false;
+        if (!isFinite(value) || value < 1 || value > state.totalWeeks) return false;
         if (seen[value]) return false;
         seen[value] = true;
         return true;
       })
       .sort(function (a, b) { return a - b; });
+  }
+
+  // The cycle length is user-configurable. An out-of-range or non-numeric value
+  // (hand-edited store, corrupt data) falls back to the real default.
+  function sanitizeTotalWeeks(value) {
+    var parsed = parseInt(value, 10);
+    if (!isFinite(parsed) || parsed < MIN_TOTAL_WEEKS || parsed > MAX_TOTAL_WEEKS) {
+      return CYCLE.totalWeeks;
+    }
+    return parsed;
+  }
+
+  /* =========================================================
+     Class schedule (horario) — data model
+     ========================================================= */
+  // A schedule entry: { day: 1..7 (Mon..Sun), start: "HH:MM", end: "HH:MM",
+  // unit: string, room: string }. Times are 24-hour strings; day is numeric so
+  // ordering never depends on locale.
+  var SCHEDULE_DAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+
+  function scheduleDayName(day) {
+    return SCHEDULE_DAY_NAMES[day - 1] || "";
+  }
+
+  function isValidScheduleEntry(entry) {
+    return !!entry && typeof entry === "object" &&
+      typeof entry.day === "number" && entry.day >= 1 && entry.day <= 7 &&
+      typeof entry.start === "string" && /^\d{2}:\d{2}$/.test(entry.start) &&
+      typeof entry.end === "string" && /^\d{2}:\d{2}$/.test(entry.end);
+  }
+
+  function normalizeScheduleEntry(entry) {
+    return {
+      day: entry.day,
+      start: entry.start,
+      end: entry.end,
+      unit: typeof entry.unit === "string" ? entry.unit.trim() : "",
+      room: typeof entry.room === "string" ? entry.room.trim() : ""
+    };
+  }
+
+  /* =========================================================
+     Class schedule (horario) — CSV/TSV parser (pure, no DOM)
+     ========================================================= */
+  // TaskTec ships zero external libraries, so native .xlsx cannot be parsed
+  // (that needs a ZIP + XML reader). The real need is covered by CSV/TSV files
+  // and by pasting rows copied from Excel/Google Sheets, which are tab-separated.
+  var SCHEDULE_DAY_TOKENS = {
+    lunes: 1, martes: 2, miercoles: 3, jueves: 4, viernes: 5, sabado: 6, domingo: 7
+  };
+
+  var SCHEDULE_COLUMN_ALIASES = {
+    day: ["dia", "day"],
+    start: ["inicio", "hora inicio", "desde", "start"],
+    end: ["fin", "hora fin", "hasta", "end"],
+    unit: ["unidad", "curso", "materia", "asignatura", "unidad didactica"],
+    room: ["ambiente", "aula", "salon", "room"]
+  };
+
+  var SCHEDULE_POSITIONAL_ORDER = ["day", "start", "end", "unit", "room"];
+
+  // Lowercase and strip combining accents so "Día", "día" and "dia" all match.
+  function stripAccents(value) {
+    return String(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  }
+
+  function normalizeToken(value) {
+    return stripAccents(String(value).trim().toLowerCase()).replace(/\s+/g, " ");
+  }
+
+  // Pick the delimiter from the first non-empty line by counting candidates
+  // outside quoted fields.
+  function detectScheduleDelimiter(line) {
+    var counts = { ",": 0, ";": 0, "\t": 0 };
+    var inQuotes = false;
+    for (var i = 0; i < line.length; i++) {
+      var ch = line.charAt(i);
+      if (ch === '"') inQuotes = !inQuotes;
+      else if (!inQuotes && (ch === "," || ch === ";" || ch === "\t")) counts[ch] += 1;
+    }
+    var best = ",";
+    var bestCount = 0;
+    [",", ";", "\t"].forEach(function (delimiter) {
+      if (counts[delimiter] > bestCount) { bestCount = counts[delimiter]; best = delimiter; }
+    });
+    return best;
+  }
+
+  // Split a delimited line, honouring double-quoted fields ("" is a literal quote).
+  function splitScheduleLine(line, delimiter) {
+    var fields = [];
+    var current = "";
+    var inQuotes = false;
+    for (var i = 0; i < line.length; i++) {
+      var ch = line.charAt(i);
+      if (inQuotes) {
+        if (ch === '"') {
+          if (line.charAt(i + 1) === '"') { current += '"'; i += 1; }
+          else inQuotes = false;
+        } else {
+          current += ch;
+        }
+      } else if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === delimiter) {
+        fields.push(current);
+        current = "";
+      } else {
+        current += ch;
+      }
+    }
+    fields.push(current);
+    return fields;
+  }
+
+  function normalizeScheduleTime(raw) {
+    var value = String(raw).trim().toLowerCase().replace(/\s+/g, "");
+    if (value === "") return null;
+    var match = value.match(/^(\d{1,2})(?::(\d{2}))?h?(?:rs)?$/);
+    if (!match) return null;
+    var hour = parseInt(match[1], 10);
+    var minute = match[2] !== undefined ? parseInt(match[2], 10) : 0;
+    if (hour > 23 || minute > 59) return null;
+    return pad2(hour) + ":" + pad2(minute);
+  }
+
+  // Accepts "07:00", "7:00", "07:00-08:30", "07:00 a 08:30" and "7 a 8".
+  function parseScheduleTimeRange(raw) {
+    var value = String(raw).trim();
+    if (value === "") return null;
+    var pieces = value
+      .split(/\s*(?:-|[\u2013\u2014]|\b(?:a|to)\b)\s*/i)
+      .filter(function (piece) { return piece.trim() !== ""; });
+    if (pieces.length === 0) return null;
+    if (pieces.length === 1) {
+      var single = normalizeScheduleTime(pieces[0]);
+      return single ? { start: single, end: null } : null;
+    }
+    var start = normalizeScheduleTime(pieces[0]);
+    var end = normalizeScheduleTime(pieces[1]);
+    if (!start || !end) return null;
+    return { start: start, end: end };
+  }
+
+  function parseScheduleDay(raw) {
+    var value = normalizeToken(raw).replace(/\.$/, "");
+    if (value === "") return null;
+    if (/^[1-7]$/.test(value)) return parseInt(value, 10);
+    if (SCHEDULE_DAY_TOKENS[value] !== undefined) return SCHEDULE_DAY_TOKENS[value];
+    return null;
+  }
+
+  // Map header cells to column indexes. Returns how many columns were recognised.
+  function mapScheduleHeader(fields) {
+    var mapping = {};
+    var recognized = 0;
+    fields.forEach(function (field, index) {
+      var token = normalizeToken(field);
+      Object.keys(SCHEDULE_COLUMN_ALIASES).forEach(function (key) {
+        if (mapping[key] !== undefined) return;
+        if (SCHEDULE_COLUMN_ALIASES[key].indexOf(token) !== -1) {
+          mapping[key] = index;
+          recognized += 1;
+        }
+      });
+    });
+    return { mapping: mapping, recognized: recognized };
+  }
+
+  function parseScheduleRow(fields, mapping) {
+    function cell(key) {
+      var index = mapping[key];
+      if (index === undefined || index < 0 || index >= fields.length) return "";
+      return fields[index];
+    }
+
+    var day = parseScheduleDay(cell("day"));
+    if (day === null) {
+      return { ok: false, reason: "No se reconoce el día \"" + (cell("day") || "") + "\". Usa lunes a domingo o 1 a 7." };
+    }
+
+    var range = parseScheduleTimeRange(cell("start"));
+    if (!range || !range.start) {
+      return { ok: false, reason: "Hora de inicio inválida \"" + (cell("start") || "") + "\"." };
+    }
+
+    var end = range.end;
+    if (!end) {
+      var endRange = parseScheduleTimeRange(cell("end"));
+      if (endRange && endRange.start) end = endRange.start;
+    }
+    if (!end) {
+      return { ok: false, reason: "Hora de fin inválida \"" + (cell("end") || "") + "\"." };
+    }
+
+    return {
+      ok: true,
+      row: {
+        day: day,
+        start: range.start,
+        end: end,
+        unit: String(cell("unit")).trim(),
+        room: String(cell("room")).trim()
+      }
+    };
+  }
+
+  // Parse pasted/imported text into rows plus a per-line error report. Never
+  // drops a row silently: anything unreadable is returned with its line number.
+  function parseScheduleText(text) {
+    var result = { rows: [], errors: [], delimiter: ",", headerFound: false, assumedOrder: false };
+    var lines = String(text === null || text === undefined ? "" : text).replace(/\r\n?/g, "\n").split("\n");
+
+    var firstIndex = -1;
+    for (var i = 0; i < lines.length; i++) {
+      if (lines[i].trim() !== "") { firstIndex = i; break; }
+    }
+    if (firstIndex === -1) return result;
+
+    var delimiter = detectScheduleDelimiter(lines[firstIndex]);
+    result.delimiter = delimiter;
+
+    var headerCells = splitScheduleLine(lines[firstIndex], delimiter);
+    var header = mapScheduleHeader(headerCells);
+
+    var mapping;
+    var startLine;
+    if (header.recognized >= 2) {
+      mapping = header.mapping;
+      result.headerFound = true;
+      startLine = firstIndex + 1;
+    } else {
+      // No usable header: fall back to the documented positional order and say so.
+      result.assumedOrder = true;
+      mapping = {};
+      SCHEDULE_POSITIONAL_ORDER.forEach(function (key, index) { mapping[key] = index; });
+      startLine = firstIndex;
+    }
+
+    for (var lineIndex = startLine; lineIndex < lines.length; lineIndex++) {
+      var rawLine = lines[lineIndex];
+      if (rawLine.trim() === "") continue;
+      var parsed = parseScheduleRow(splitScheduleLine(rawLine, delimiter), mapping);
+      if (parsed.ok) result.rows.push(parsed.row);
+      else result.errors.push({ line: lineIndex + 1, reason: parsed.reason, raw: rawLine });
+    }
+
+    return result;
+  }
+
+  // Link a schedule entry to an active cycle unit by accent/case-insensitive name.
+  function findUnitByName(name) {
+    var needle = normalizeToken(name);
+    if (needle === "") return null;
+    var units = activeUnits();
+    for (var i = 0; i < units.length; i++) {
+      if (normalizeToken(units[i].name) === needle) return units[i];
+    }
+    return null;
   }
 
   /* =========================================================
@@ -2345,18 +2740,34 @@
     var today = startOfDay(new Date());
     var dayOffset = daysBetween(start, today);
     var raw = Math.floor(dayOffset / 7) + 1;
-    var week = Math.min(CYCLE.totalWeeks, Math.max(1, raw));
+    var week = Math.min(state.totalWeeks, Math.max(1, raw));
     return {
       start: start,
       dayOffset: dayOffset,
       beforeStart: dayOffset < 0,
-      finished: dayOffset >= CYCLE.totalWeeks * 7,
+      finished: dayOffset >= state.totalWeeks * 7,
       week: week
     };
   }
 
+  // The final week is always the last week of the configured cycle.
   function isFinalWeek(week) {
-    return CYCLE.finalWeeks.indexOf(week) !== -1;
+    return week === state.totalWeeks;
+  }
+
+  // Last week that still counts as classes; everything after it is finals.
+  function classWeekEnd() {
+    return Math.max(1, Math.min(CYCLE.classWeeks, state.totalWeeks - 1));
+  }
+
+  // Phase label follows the configured cycle length, not a hardcoded 16/18.
+  function phaseLabel(finals) {
+    var classEnd = classWeekEnd();
+    if (!finals) return "Clases (sem 1-" + classEnd + ")";
+    var finalStart = classEnd + 1;
+    var finalEnd = state.totalWeeks;
+    var range = finalStart === finalEnd ? "sem " + finalStart : "sem " + finalStart + "-" + finalEnd;
+    return "Evaluaciones finales (" + range + ")";
   }
 
   function getNextMilestone(now) {
@@ -2367,7 +2778,7 @@
     state.theoryAssessmentWeeks.forEach(function (week) {
       milestones.push({ week: week, label: "Evaluación de teoría · Semana " + week, type: "theory" });
     });
-    CYCLE.finalWeeks.forEach(function (week) {
+    [state.totalWeeks].forEach(function (week) {
       milestones.push({ week: week, label: "Evaluaciones finales · Semana " + week, type: "final" });
     });
     milestones.sort(function (a, b) { return a.week - b.week; });
@@ -2934,14 +3345,14 @@
 
     var week = info.week;
     var finals = isFinalWeek(week);
-    var progressPercent = Math.round((week / CYCLE.totalWeeks) * 100);
+    var progressPercent = Math.round((week / state.totalWeeks) * 100);
 
     var hero = el("section", { class: "card hero" }, [
       el("div", { class: "hero-eyebrow", text: "Ciclo " + state.cycleNumber }),
       el("p", { class: "hero-program", text: (activeProgram ? activeProgram.name : "Programa sin definir") + (state.campus ? " · Sede " + state.campus : "") }),
       el("div", { class: "week-row" }, [
         el("span", { class: "week-number", text: "Semana " + week }),
-        el("span", { class: "week-caption", text: "de " + CYCLE.totalWeeks })
+        el("span", { class: "week-caption", text: "de " + state.totalWeeks })
       ]),
       el("div", { class: "progress", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(progressPercent), "aria-label": "Avance del ciclo" }, [
         el("div", { class: "progress-bar", style: "width: " + progressPercent + "%" })
@@ -2952,7 +3363,7 @@
       ]),
       el("div", { class: "phase-row" }, [
         el("span", { class: "phase-dot" + (finals ? " finals" : ""), "aria-hidden": "true" }),
-        el("span", { text: finals ? "Evaluaciones finales (sem 17-18)" : "Clases (sem 1-16)" })
+        el("span", { text: phaseLabel(finals) })
       ])
     ]);
     root.appendChild(hero);
@@ -3063,7 +3474,7 @@
 
   function renderTimeline(currentWeek) {
     var strip = el("div", { class: "timeline", role: "list" });
-    for (var week = 1; week <= CYCLE.totalWeeks; week++) {
+    for (var week = 1; week <= state.totalWeeks; week++) {
       var classes = "tl-week";
       if (week < currentWeek) classes += " past";
       if (week === currentWeek) classes += " current";
@@ -3182,6 +3593,315 @@
   }
 
   /* =========================================================
+     Rendering — schedule (horario)
+     ========================================================= */
+  // Import is hosted in the Horario screen (not Settings): the preview, the
+  // "replaces N entries" warning and the result all belong next to the data they
+  // change, and Settings stays about the cycle itself.
+  var schedulePreview = null; // parsed import awaiting explicit confirmation
+  var schedulePreviewSource = "";
+
+  function todayScheduleDay() {
+    var jsDay = new Date().getDay(); // 0 = Sunday
+    return jsDay === 0 ? 7 : jsDay;
+  }
+
+  function scheduleEntriesForDay(day) {
+    return state.schedule
+      .filter(function (entry) { return entry.day === day; })
+      .sort(function (a, b) { return a.start.localeCompare(b.start); });
+  }
+
+  function renderSchedule() {
+    var root = document.getElementById("screen-schedule");
+    clear(root);
+
+    root.appendChild(el("div", { class: "row-between" }, [
+      el("h2", { class: "section-title", style: "margin: 0;", text: "Tu horario" }),
+      el("button", {
+        type: "button", class: "btn btn-sm",
+        on: { click: downloadScheduleTemplate }
+      }, [
+        icon("note"),
+        "Descargar plantilla"
+      ])
+    ]));
+
+    if (state.schedule.length === 0) {
+      root.appendChild(emptyState(
+        "schedule",
+        "Todavía no importaste tu horario",
+        "Sube un CSV o pega las filas de tu horario para ver qué horas tienes clases. Puedes descargar una plantilla de ejemplo.",
+        el("button", {
+          type: "button", class: "btn btn-primary",
+          text: "Descargar plantilla",
+          on: { click: downloadScheduleTemplate }
+        })
+      ));
+    } else {
+      root.appendChild(renderScheduleToday());
+      root.appendChild(el("h2", { class: "section-title", text: "La semana completa" }));
+      root.appendChild(renderScheduleWeek());
+    }
+
+    root.appendChild(el("h2", { class: "section-title", text: "Importar horario" }));
+    root.appendChild(renderScheduleImportCard());
+
+    if (state.schedule.length > 0) {
+      var clearCard = el("section", { class: "card" });
+      clearCard.appendChild(el("p", { class: "helper", text: "Puedes vaciar el horario y volver a importarlo cuando quieras." }));
+      clearCard.appendChild(el("button", {
+        type: "button", class: "btn btn-danger mt-12",
+        on: { click: clearSchedule }
+      }, [
+        icon("trash"),
+        "Borrar horario"
+      ]));
+      root.appendChild(clearCard);
+    }
+  }
+
+  function renderScheduleToday() {
+    var day = todayScheduleDay();
+    var entries = scheduleEntriesForDay(day);
+    var card = el("section", { class: "card" });
+    card.appendChild(el("span", { class: "field-label" }, [icon("clock", "icon-lead"), "Hoy · " + scheduleDayName(day)]));
+
+    if (entries.length === 0) {
+      var weekend = day === 6 || day === 7;
+      card.appendChild(el("p", { class: "helper", text: weekend
+        ? "Hoy es fin de semana y no tienes clases registradas. Descansa."
+        : "No tienes clases registradas para hoy." }));
+    } else {
+      entries.forEach(function (entry) { card.appendChild(scheduleEntryRow(entry)); });
+    }
+    return card;
+  }
+
+  function renderScheduleWeek() {
+    var card = el("section", { class: "card" });
+    for (var day = 1; day <= 7; day++) {
+      var entries = scheduleEntriesForDay(day);
+      var group = el("div", { class: "schedule-day" }, [
+        el("div", { class: "schedule-day-head" }, [
+          el("span", { class: "schedule-day-name", text: scheduleDayName(day) }),
+          el("span", { class: "schedule-day-count", text: entries.length === 0 ? "sin clases" : (entries.length === 1 ? "1 clase" : entries.length + " clases") })
+        ])
+      ]);
+      if (entries.length === 0) {
+        group.appendChild(el("p", { class: "schedule-day-empty", text: "Sin clases registradas." }));
+      } else {
+        entries.forEach(function (entry) { group.appendChild(scheduleEntryRow(entry)); });
+      }
+      card.appendChild(group);
+    }
+    return card;
+  }
+
+  // One schedule row. When the unit name matches an active cycle unit, the row
+  // becomes a button that opens that unit's modal — the schedule/deadlines link.
+  function scheduleEntryRow(entry) {
+    var unit = findUnitByName(entry.unit);
+    var meta = entry.unit || "Sin unidad";
+    if (entry.room) meta += " · " + entry.room;
+
+    var content = [
+      el("span", { class: "schedule-time", text: entry.start + " - " + entry.end }),
+      el("span", { class: "schedule-info" }, [
+        el("span", { class: "schedule-unit", text: meta })
+      ])
+    ];
+
+    if (unit) {
+      content.push(el("span", { class: "schedule-link", "aria-hidden": "true" }, [icon("chevron-right")]));
+      return el("button", {
+        type: "button",
+        class: "schedule-entry is-linked",
+        "aria-label": "Abrir la unidad didáctica " + unit.name,
+        on: { click: function () { openUnitModal(unit.id); } }
+      }, content);
+    }
+    return el("div", { class: "schedule-entry" }, content);
+  }
+
+  function renderScheduleImportCard() {
+    var card = el("section", { class: "card" });
+    card.appendChild(el("p", { class: "helper", text: "TaskTec no puede leer archivos .xlsx de Excel (haría falta una librería externa y esta app no usa ninguna). En Excel o Google Sheets usa \"Guardar como\" / \"Descargar\" y elige CSV, o copia las filas y pégalas aquí: lo copiado de la hoja viene separado por tabulaciones y se lee igual." }));
+
+    card.appendChild(el("div", { class: "field" }, [
+      el("label", { for: "scheduleFile", text: "Archivo CSV o TSV" }),
+      el("input", {
+        class: "input", type: "file", id: "scheduleFile",
+        accept: ".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain",
+        on: { change: handleScheduleFile }
+      })
+    ]));
+
+    card.appendChild(el("div", { class: "field" }, [
+      el("label", { for: "schedulePaste", text: "O pega las filas" }),
+      el("textarea", {
+        class: "input schedule-paste", id: "schedulePaste", rows: "5",
+        placeholder: "Pega aquí las filas copiadas de Excel o Google Sheets"
+      }, [schedulePreviewSource])
+    ]));
+
+    card.appendChild(el("button", {
+      type: "button", class: "btn btn-primary btn-block",
+      on: { click: handleScheduleParse }
+    }, [
+      icon("schedule"),
+      "Previsualizar importación"
+    ]));
+
+    if (schedulePreview) card.appendChild(renderSchedulePreview(schedulePreview));
+    return card;
+  }
+
+  function renderSchedulePreview(preview) {
+    var box = el("div", { class: "schedule-preview" });
+    box.appendChild(el("span", { class: "field-label", text: "Vista previa" }));
+
+    if (preview.assumedOrder) {
+      box.appendChild(el("div", { class: "grade-note warning" }, [
+        icon("alert"),
+        el("span", { text: "No reconocí una fila de encabezado, así que asumí este orden de columnas: día, inicio, fin, unidad, ambiente." })
+      ]));
+    }
+
+    var delimiterName = preview.delimiter === "\t" ? "tabulaciones" : (preview.delimiter === ";" ? "punto y coma" : "comas");
+    box.appendChild(el("p", { class: "helper", text: preview.rows.length + (preview.rows.length === 1 ? " clase lista para importar" : " clases listas para importar") + " · separador detectado: " + delimiterName + "." }));
+
+    if (preview.rows.length > 0) {
+      var list = el("ul", { class: "schedule-preview-list" });
+      preview.rows.slice(0, 50).forEach(function (entry) {
+        list.appendChild(el("li", {}, [
+          el("span", { class: "schedule-preview-day", text: scheduleDayName(entry.day) }),
+          el("span", { class: "schedule-preview-text", text: entry.start + " - " + entry.end + " · " + (entry.unit || "Sin unidad") + (entry.room ? " · " + entry.room : "") })
+        ]));
+      });
+      if (preview.rows.length > 50) {
+        list.appendChild(el("li", {}, [
+          el("span", { class: "schedule-preview-day", text: "" }),
+          el("span", { class: "schedule-preview-text", text: "y " + (preview.rows.length - 50) + " más..." })
+        ]));
+      }
+      box.appendChild(list);
+    }
+
+    if (preview.errors.length > 0) {
+      box.appendChild(el("div", { class: "grade-note danger" }, [
+        icon("alert"),
+        el("span", { text: preview.errors.length + (preview.errors.length === 1 ? " fila no se pudo leer:" : " filas no se pudieron leer:") })
+      ]));
+      var errorList = el("ul", { class: "schedule-error-list" });
+      preview.errors.forEach(function (error) {
+        errorList.appendChild(el("li", { text: "Línea " + error.line + ": " + error.reason }));
+      });
+      box.appendChild(errorList);
+    }
+
+    var confirmText = state.schedule.length > 0
+      ? "Reemplazar horario (" + state.schedule.length + (state.schedule.length === 1 ? " clase actual" : " clases actuales") + ")"
+      : "Importar " + preview.rows.length + (preview.rows.length === 1 ? " clase" : " clases");
+    box.appendChild(el("button", {
+      type: "button", class: "btn btn-primary btn-block mt-12",
+      disabled: preview.rows.length === 0,
+      on: { click: confirmScheduleImport }
+    }, [
+      icon("check"),
+      confirmText
+    ]));
+
+    box.appendChild(el("button", {
+      type: "button", class: "btn btn-ghost btn-block mt-12",
+      on: {
+        click: function () {
+          schedulePreview = null;
+          renderSchedule();
+        }
+      }
+    }, ["Cancelar"]));
+
+    return box;
+  }
+
+  function handleScheduleParse() {
+    var textarea = document.getElementById("schedulePaste");
+    var text = textarea ? textarea.value : "";
+    schedulePreviewSource = text;
+    schedulePreview = parseScheduleText(text);
+    renderSchedule();
+  }
+
+  function handleScheduleFile(event) {
+    var input = event.target;
+    var file = input.files && input.files[0];
+    if (!file) return;
+
+    if (/\.xlsx?$/i.test(file.name || "")) {
+      schedulePreview = null;
+      schedulePreviewSource = "";
+      window.alert("TaskTec no puede leer archivos de Excel (.xlsx). Abre tu horario en Excel, usa \"Guardar como\" y elige CSV, o copia las filas y pégalas en el área de texto.");
+      input.value = "";
+      renderSchedule();
+      return;
+    }
+
+    var reader = new FileReader();
+    reader.onload = function () {
+      schedulePreviewSource = String(reader.result === null || reader.result === undefined ? "" : reader.result);
+      schedulePreview = parseScheduleText(schedulePreviewSource);
+      renderSchedule();
+    };
+    reader.onerror = function () {
+      window.alert("No se pudo leer el archivo. Intenta pegando las filas en el área de texto.");
+    };
+    reader.readAsText(file);
+  }
+
+  function confirmScheduleImport() {
+    if (!schedulePreview || schedulePreview.rows.length === 0) return;
+    if (state.schedule.length > 0) {
+      var message = "Se reemplazarán " + state.schedule.length +
+        (state.schedule.length === 1 ? " clase registrada" : " clases registradas") +
+        " por las " + schedulePreview.rows.length + " de la importación. ¿Continuar?";
+      if (!window.confirm(message)) return;
+    }
+    state.schedule = schedulePreview.rows.map(normalizeScheduleEntry);
+    schedulePreview = null;
+    schedulePreviewSource = "";
+    saveState();
+    renderSchedule();
+  }
+
+  function clearSchedule() {
+    if (state.schedule.length === 0) return;
+    var message = "Se borrarán las " + state.schedule.length +
+      (state.schedule.length === 1 ? " clase" : " clases") + " del horario. ¿Continuar?";
+    if (!window.confirm(message)) return;
+    state.schedule = [];
+    schedulePreview = null;
+    schedulePreviewSource = "";
+    saveState();
+    renderSchedule();
+  }
+
+  function downloadScheduleTemplate() {
+    var csv = "día,inicio,fin,unidad,ambiente\r\n" +
+      "lunes,07:00,08:30,Cálculo y Estadística,Aula 302\r\n" +
+      "lunes,08:30,10:00,Fundamentos de Programación,Lab 3\r\n" +
+      "miércoles,07:00,08:30,Cálculo y Estadística,Aula 302\r\n" +
+      "viernes,10:00,11:30,Comunicación,Aula 201\r\n";
+    var link = el("a", {
+      href: "data:text/csv;charset=utf-8," + encodeURIComponent(csv),
+      download: "horario-tasktec.csv"
+    });
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  /* =========================================================
      Rendering — units
      ========================================================= */
   function renderUnits() {
@@ -3295,7 +4015,7 @@
           }
         }
       }),
-      el("p", { class: "helper", text: "La fecha oficial no es pública. Configúrala tú: TaskTec no la inventa. Con ella calcula tu semana N de 18." })
+      el("p", { class: "helper", text: "La fecha oficial no es pública. Configúrala tú: TaskTec no la inventa. Con ella calcula tu semana N de " + state.totalWeeks + "." })
     ]));
     if (state.startDate) {
       var info = getWeekInfo();
@@ -3332,8 +4052,27 @@
     ]));
     root.appendChild(campusCard);
 
-    // --- Theory assessment weeks ---
+    // --- Cycle length + theory assessment weeks ---
     var weeksCard = el("section", { class: "card" });
+    weeksCard.appendChild(el("div", { class: "field" }, [
+      el("label", { for: "settingTotalWeeks" }, [icon("cycle", "icon-lead"), "Duración del ciclo (semanas)"]),
+      el("input", {
+        class: "input", type: "number", id: "settingTotalWeeks",
+        min: String(MIN_TOTAL_WEEKS), max: String(MAX_TOTAL_WEEKS), step: "1", inputmode: "numeric",
+        value: String(state.totalWeeks),
+        on: {
+          change: function (event) {
+            state.totalWeeks = sanitizeTotalWeeks(event.target.value);
+            // Theory weeks must stay within the (possibly shorter) configured cycle.
+            state.theoryAssessmentWeeks = sanitizeWeeks(state.theoryAssessmentWeeks);
+            saveState();
+            renderSettings();
+            renderDashboard();
+          }
+        }
+      }),
+      el("p", { class: "helper", text: "Por defecto 17. El Reglamento Institucional de Tecsup describe 18 semanas (16 de clases + 2 de evaluaciones finales), pero el ciclo realmente cursado dura 17 y la actividad cierra hacia la semana 15-16. Ajusta aquí si tu ciclo es distinto: la última semana es siempre la de evaluaciones finales." })
+    ]));
     weeksCard.appendChild(el("div", { class: "field", style: "margin-bottom: 0;" }, [
       el("label", { for: "settingWeeks", text: "Semanas de evaluación de teoría" }),
       el("input", {
@@ -3351,7 +4090,7 @@
           }
         }
       }),
-      el("p", { class: "helper", text: "Semanas entre 1 y 16, separadas por comas. El ritmo \"cada 4 semanas\" se observó en Cálculo y Estadística (ciclos 1-2) y NO está confirmado para todos los ciclos: revísalo en tus sílabos y ajústalo aquí." })
+      el("p", { class: "helper", text: "Semanas entre 1 y " + state.totalWeeks + ", separadas por comas. El ritmo \"cada 4 semanas\" se observó en Cálculo y Estadística (ciclos 1-2) y NO está confirmado para todos los ciclos: revísalo en tus sílabos y ajústalo aquí." })
     ]));
     root.appendChild(weeksCard);
 
@@ -3465,7 +4204,7 @@
     // --- About / honesty ---
     root.appendChild(el("section", { class: "card" }, [
       el("span", { class: "field-label", text: "Sobre los datos" }),
-      el("p", { class: "helper", text: "Ciclo de 18 semanas: 16 de clases y 2 de evaluaciones finales (Reglamento Institucional de Tecsup, Art. 37). Las unidades didácticas se cargan de la malla verificada del ciclo que elijas. Lo que no se pudo verificar (fecha de inicio y ritmo de evaluaciones) se configura, no se asume." })
+      el("p", { class: "helper", text: "El Reglamento Institucional de Tecsup (Art. 37) describe el período como 18 semanas: 16 de clases y 2 de evaluaciones finales. El ciclo realmente cursado dura 17 (la actividad cierra hacia la semana 15-16 y la 17 es la última), así que TaskTec usa 17 por defecto y te deja corregirlo en \"Duración del ciclo\". Las unidades didácticas se cargan de la malla verificada del ciclo que elijas. Lo que no se pudo verificar (fecha de inicio y ritmo de evaluaciones) se configura, no se asume." })
     ]));
 
     // --- Reset ---
@@ -3959,7 +4698,7 @@
      ========================================================= */
   function switchScreen(screenName) {
     activeScreen = screenName;
-    ["dashboard", "deadlines", "units", "settings"].forEach(function (name) {
+    ["dashboard", "deadlines", "schedule", "units", "settings"].forEach(function (name) {
       var section = document.getElementById("screen-" + name);
       section.classList.toggle("active", name === screenName);
       var tab = document.getElementById("tab-" + name);
@@ -3975,6 +4714,7 @@
     renderHeader();
     if (activeScreen === "dashboard") renderDashboard();
     else if (activeScreen === "deadlines") renderDeadlines();
+    else if (activeScreen === "schedule") renderSchedule();
     else if (activeScreen === "units") renderUnits();
     else if (activeScreen === "settings") renderSettings();
   }
