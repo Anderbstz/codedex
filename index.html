@@ -2372,9 +2372,10 @@
   /* =========================================================
      Class schedule (horario) — CSV/TSV parser (pure, no DOM)
      ========================================================= */
-  // TaskTec ships zero external libraries, so native .xlsx cannot be parsed
-  // (that needs a ZIP + XML reader). The real need is covered by CSV/TSV files
-  // and by pasting rows copied from Excel/Google Sheets, which are tab-separated.
+  // TaskTec ships zero external libraries. An .xlsx is a ZIP of XML, so the
+  // native reader further below covers Excel without adding a dependency. The
+  // text path stays for CSV/TSV files and for pasted rows copied from Excel or
+  // Google Sheets, which arrive tab-separated.
   var SCHEDULE_DAY_TOKENS = {
     lunes: 1, martes: 2, miercoles: 3, jueves: 4, viernes: 5, sabado: 6, domingo: 7
   };
@@ -2501,7 +2502,8 @@
     function cell(key) {
       var index = mapping[key];
       if (index === undefined || index < 0 || index >= fields.length) return "";
-      return fields[index];
+      var value = fields[index];
+      return value === null || value === undefined ? "" : String(value);
     }
 
     var day = parseScheduleDay(cell("day"));
@@ -2535,47 +2537,456 @@
     };
   }
 
-  // Parse pasted/imported text into rows plus a per-line error report. Never
-  // drops a row silently: anything unreadable is returned with its line number.
-  function parseScheduleText(text) {
-    var result = { rows: [], errors: [], delimiter: ",", headerFound: false, assumedOrder: false };
-    var lines = String(text === null || text === undefined ? "" : text).replace(/\r\n?/g, "\n").split("\n");
+  // Shared pipeline: a row-major matrix of cell strings becomes schedule rows.
+  // Both the CSV/TSV text path and the native .xlsx path funnel through here so
+  // column mapping, day parsing, time normalization and error reporting live in
+  // exactly one place.
+  function matrixRowHasContent(row) {
+    if (!row) return false;
+    for (var i = 0; i < row.length; i++) {
+      var value = row[i];
+      if (value !== null && value !== undefined && String(value).trim() !== "") return true;
+    }
+    return false;
+  }
+
+  function scheduleFromMatrix(matrix) {
+    var result = { rows: [], errors: [], headerFound: false, assumedOrder: false };
+    var rows = Array.isArray(matrix) ? matrix : [];
 
     var firstIndex = -1;
-    for (var i = 0; i < lines.length; i++) {
-      if (lines[i].trim() !== "") { firstIndex = i; break; }
+    for (var i = 0; i < rows.length; i++) {
+      if (matrixRowHasContent(rows[i])) { firstIndex = i; break; }
     }
     if (firstIndex === -1) return result;
 
-    var delimiter = detectScheduleDelimiter(lines[firstIndex]);
-    result.delimiter = delimiter;
-
-    var headerCells = splitScheduleLine(lines[firstIndex], delimiter);
-    var header = mapScheduleHeader(headerCells);
+    var header = mapScheduleHeader(rows[firstIndex]);
 
     var mapping;
-    var startLine;
+    var startRow;
     if (header.recognized >= 2) {
       mapping = header.mapping;
       result.headerFound = true;
-      startLine = firstIndex + 1;
+      startRow = firstIndex + 1;
     } else {
       // No usable header: fall back to the documented positional order and say so.
       result.assumedOrder = true;
       mapping = {};
       SCHEDULE_POSITIONAL_ORDER.forEach(function (key, index) { mapping[key] = index; });
-      startLine = firstIndex;
+      startRow = firstIndex;
     }
 
-    for (var lineIndex = startLine; lineIndex < lines.length; lineIndex++) {
-      var rawLine = lines[lineIndex];
-      if (rawLine.trim() === "") continue;
-      var parsed = parseScheduleRow(splitScheduleLine(rawLine, delimiter), mapping);
+    for (var rowIndex = startRow; rowIndex < rows.length; rowIndex++) {
+      var fields = rows[rowIndex];
+      if (!matrixRowHasContent(fields)) continue;
+      var parsed = parseScheduleRow(fields, mapping);
       if (parsed.ok) result.rows.push(parsed.row);
-      else result.errors.push({ line: lineIndex + 1, reason: parsed.reason, raw: rawLine });
+      else result.errors.push({ line: rowIndex + 1, reason: parsed.reason, raw: fields.join(" | ") });
     }
 
     return result;
+  }
+
+  // Parse pasted/imported text into rows plus a per-line error report. Never
+  // drops a row silently: anything unreadable is returned with its line number.
+  function parseScheduleText(text) {
+    var lines = String(text === null || text === undefined ? "" : text).replace(/\r\n?/g, "\n").split("\n");
+    var empty = { rows: [], errors: [], delimiter: ",", headerFound: false, assumedOrder: false };
+
+    var firstIndex = -1;
+    for (var i = 0; i < lines.length; i++) {
+      if (lines[i].trim() !== "") { firstIndex = i; break; }
+    }
+    if (firstIndex === -1) return empty;
+
+    var delimiter = detectScheduleDelimiter(lines[firstIndex]);
+    var matrix = lines.map(function (line) {
+      return line.trim() === "" ? [] : splitScheduleLine(line, delimiter);
+    });
+
+    var result = scheduleFromMatrix(matrix);
+    result.delimiter = delimiter;
+    return result;
+  }
+
+  /* =========================================================
+     Class schedule (horario) — native .xlsx reader (pure, no DOM side effects)
+     ========================================================= */
+  // An .xlsx is a ZIP archive of XML parts. The browser already ships both
+  // halves of the job: DecompressionStream('deflate-raw') for the ZIP payloads
+  // and DOMParser for the XML. No library, no network, no new file.
+  //
+  // ZIP strategy: walk the local file headers forward (signature 0x04034b50).
+  // If an entry sets general purpose bit 3 (streamed, sizes deferred to a data
+  // descriptor) the forward walk cannot know where the data ends, so the whole
+  // archive is re-read from the central directory instead.
+  var ZIP_LOCAL_HEADER = 0x04034b50;
+  var ZIP_CENTRAL_HEADER = 0x02014b50;
+  var ZIP_END_OF_CENTRAL = 0x06054b50;
+  var ZIP64_END_OF_CENTRAL = 0x06064b50;
+  var ZIP64_END_LOCATOR = 0x07064b50;
+
+  function xlsxError(code) {
+    var error = new Error(code);
+    error.code = code;
+    return error;
+  }
+
+  // Spanish, user-facing copy for every failure mode. The UI shows these as-is.
+  function xlsxErrorMessage(code) {
+    switch (code) {
+      case "LEGACY_XLS":
+        return "Ese archivo es un Excel antiguo (.xls). TaskTec lee .xlsx y .xlsm. En Excel usa \"Guardar como\" y elige Libro de Excel (.xlsx), o expórtalo como CSV.";
+      case "ZIP64":
+        return "Ese archivo de Excel usa el formato ZIP64, que TaskTec no puede leer. Vuelve a guardarlo como .xlsx estándar, o expórtalo como CSV.";
+      case "UNSUPPORTED_METHOD":
+        return "Ese archivo usa un método de compresión que TaskTec no puede leer. Vuelve a guardarlo como .xlsx o expórtalo como CSV.";
+      case "NO_DEFLATE":
+        return "Tu navegador no puede descomprimir archivos .xlsx. Actualízalo, o usa un archivo CSV/TSV o pega las filas.";
+      default:
+        return "No se pudo leer el archivo de Excel. Puede estar dañado o no ser un .xlsx real. Expórtalo como CSV o pega las filas.";
+    }
+  }
+
+  function readUint16LE(bytes, offset) {
+    return bytes[offset] | (bytes[offset + 1] << 8);
+  }
+
+  function readUint32LE(bytes, offset) {
+    return (bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24)) >>> 0;
+  }
+
+  function decodeUtf8(bytes) {
+    return new TextDecoder("utf-8").decode(bytes);
+  }
+
+  // Some exporters write text that is already UTF-8, then re-encode it as if it
+  // were Latin-1, so a word like "Dia" (accented i) lands in the sheet as its
+  // mojibake form. Reinterpreting the Latin-1 code units as UTF-8 recovers the
+  // original text. The decode is fatal, so a genuinely correct string (a real
+  // accented char is a lone byte and fails the UTF-8 check) is left untouched.
+  // A no-op for well-formed workbooks such as real Excel or Google Sheets.
+  function repairMojibake(value) {
+    if (!value) return value;
+    var hasHighUnit = false;
+    for (var i = 0; i < value.length; i++) {
+      var code = value.charCodeAt(i);
+      if (code > 0xff) return value;
+      if (code >= 0x80) hasHighUnit = true;
+    }
+    if (!hasHighUnit) return value;
+    var bytes = new Uint8Array(value.length);
+    for (var j = 0; j < value.length; j++) bytes[j] = value.charCodeAt(j);
+    try {
+      return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch (error) {
+      return value;
+    }
+  }
+
+  // Legacy .xls is an OLE2 compound document, not a ZIP. Detect it by magic
+  // bytes so the user gets an actionable message instead of a generic failure.
+  function isLegacyXls(bytes) {
+    return bytes.length >= 4 &&
+      bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0;
+  }
+
+  // Detect once and cache: constructing a deflate-raw stream throws where the
+  // codec is unsupported, which is the cheap capability probe.
+  var deflateRawSupported = null;
+
+  function supportsDeflateRaw() {
+    if (deflateRawSupported !== null) return deflateRawSupported;
+    try {
+      if (typeof DecompressionStream !== "function") {
+        deflateRawSupported = false;
+      } else {
+        deflateRawSupported = !!new DecompressionStream("deflate-raw");
+      }
+    } catch (error) {
+      deflateRawSupported = false;
+    }
+    return deflateRawSupported;
+  }
+
+  // Drain the stream by hand. Collecting with new Response(stream).arrayBuffer()
+  // makes Chrome treat this as a fetch, which a strict connect-src CSP can block
+  // even though nothing touches the network. Both writer.write() and
+  // writer.close() get a .catch(): on corrupt input the writer side rejects too,
+  // and without the guards a handled failure still logs an uncaught rejection.
+  async function inflateRaw(bytes) {
+    var stream = new DecompressionStream("deflate-raw");
+    var writer = stream.writable.getWriter();
+    var writePromise = writer.write(bytes);
+    writePromise.catch(function () {});
+    var closePromise = writer.close();
+    closePromise.catch(function () {});
+    var reader = stream.readable.getReader();
+
+    var chunks = [];
+    var total = 0;
+    try {
+      for (;;) {
+        var step = await reader.read();
+        if (step.done) break;
+        if (step.value) { chunks.push(step.value); total += step.value.length; }
+      }
+      await writePromise;
+      await closePromise;
+    } catch (error) {
+      throw xlsxError("CORRUPT");
+    }
+
+    var output = new Uint8Array(total);
+    var offset = 0;
+    for (var i = 0; i < chunks.length; i++) {
+      output.set(chunks[i], offset);
+      offset += chunks[i].length;
+    }
+    return output;
+  }
+
+  function findEndOfCentralDirectory(bytes) {
+    var min = Math.max(0, bytes.length - 65557);
+    for (var i = bytes.length - 4; i >= min; i--) {
+      if (readUint32LE(bytes, i) === ZIP_END_OF_CENTRAL) return i;
+    }
+    return -1;
+  }
+
+  // ZIP64 archives are out of scope. The locator sits right before the classic
+  // end-of-central-directory record; sentinel field values (0xFFFF/0xFFFFFFFF)
+  // are the other tell. A pure ZIP64 file has no classic record at all.
+  function assertNotZip64(bytes) {
+    var eocd = findEndOfCentralDirectory(bytes);
+    if (eocd < 0) {
+      var min = Math.max(0, bytes.length - 66000);
+      for (var i = bytes.length - 4; i >= min; i--) {
+        if (readUint32LE(bytes, i) === ZIP64_END_OF_CENTRAL) throw xlsxError("ZIP64");
+      }
+      throw xlsxError("CORRUPT");
+    }
+    if (eocd >= 20 && readUint32LE(bytes, eocd - 20) === ZIP64_END_LOCATOR) throw xlsxError("ZIP64");
+    if (readUint16LE(bytes, eocd + 10) === 0xffff) throw xlsxError("ZIP64");
+    if (readUint32LE(bytes, eocd + 12) === 0xffffffff) throw xlsxError("ZIP64");
+    if (readUint32LE(bytes, eocd + 16) === 0xffffffff) throw xlsxError("ZIP64");
+  }
+
+  // Walk local file headers forward. Returns a name -> { method, data } map.
+  function readZipEntriesFromLocalHeaders(bytes) {
+    var entries = {};
+    var offset = 0;
+    while (offset + 30 <= bytes.length && readUint32LE(bytes, offset) === ZIP_LOCAL_HEADER) {
+      var flags = readUint16LE(bytes, offset + 6);
+      var method = readUint16LE(bytes, offset + 8);
+      var compressedSize = readUint32LE(bytes, offset + 18);
+      var uncompressedSize = readUint32LE(bytes, offset + 22);
+      var nameLength = readUint16LE(bytes, offset + 26);
+      var extraLength = readUint16LE(bytes, offset + 28);
+      if ((flags & 0x0008) !== 0) return null; // streamed: fall back to central directory
+      if (compressedSize === 0xffffffff || uncompressedSize === 0xffffffff) throw xlsxError("ZIP64");
+      var nameStart = offset + 30;
+      var dataStart = nameStart + nameLength + extraLength;
+      var name = decodeUtf8(bytes.subarray(nameStart, nameStart + nameLength));
+      entries[name] = { method: method, data: bytes.subarray(dataStart, dataStart + compressedSize) };
+      offset = dataStart + compressedSize;
+    }
+    return entries;
+  }
+
+  // Alternative strategy, used only when a streamed entry is found. The central
+  // directory always stores the real compressed size, so it handles the deferred
+  // data descriptor without scanning for 0x08074b50 inside the payload.
+  function readZipEntriesFromCentralDirectory(bytes) {
+    var eocd = findEndOfCentralDirectory(bytes);
+    if (eocd < 0) throw xlsxError("CORRUPT");
+    var count = readUint16LE(bytes, eocd + 10);
+    var offset = readUint32LE(bytes, eocd + 16);
+    var entries = {};
+    for (var i = 0; i < count; i++) {
+      if (offset + 46 > bytes.length || readUint32LE(bytes, offset) !== ZIP_CENTRAL_HEADER) break;
+      var method = readUint16LE(bytes, offset + 10);
+      var compressedSize = readUint32LE(bytes, offset + 20);
+      var nameLength = readUint16LE(bytes, offset + 28);
+      var extraLength = readUint16LE(bytes, offset + 30);
+      var commentLength = readUint16LE(bytes, offset + 32);
+      var localOffset = readUint32LE(bytes, offset + 42);
+      if (compressedSize === 0xffffffff || localOffset === 0xffffffff) throw xlsxError("ZIP64");
+      var name = decodeUtf8(bytes.subarray(offset + 46, offset + 46 + nameLength));
+      var localNameLength = readUint16LE(bytes, localOffset + 26);
+      var localExtraLength = readUint16LE(bytes, localOffset + 28);
+      var dataStart = localOffset + 30 + localNameLength + localExtraLength;
+      entries[name] = { method: method, data: bytes.subarray(dataStart, dataStart + compressedSize) };
+      offset += 46 + nameLength + extraLength + commentLength;
+    }
+    return entries;
+  }
+
+  function readZipEntries(bytes) {
+    var local = readZipEntriesFromLocalHeaders(bytes);
+    if (local) return local;
+    return readZipEntriesFromCentralDirectory(bytes);
+  }
+
+  async function readEntryBytes(entries, name) {
+    var entry = entries[name];
+    if (!entry) return null;
+    if (entry.method === 0) return entry.data;
+    if (entry.method === 8) return inflateRaw(entry.data);
+    throw xlsxError("UNSUPPORTED_METHOD");
+  }
+
+  async function readEntryText(entries, name) {
+    var data = await readEntryBytes(entries, name);
+    return data ? decodeUtf8(data) : "";
+  }
+
+  function parseXml(text) {
+    try {
+      var doc = new DOMParser().parseFromString(text, "application/xml");
+      if (doc.getElementsByTagName("parsererror").length > 0) return null;
+      return doc;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  // Concatenate every <t> run in document order: handles plain <si><t> and rich
+  // text <si><r><t>..</t></r>..</si> alike.
+  function concatenateTextRuns(node) {
+    var textNodes = node.getElementsByTagName("t");
+    var text = "";
+    for (var i = 0; i < textNodes.length; i++) text += textNodes[i].textContent || "";
+    return text;
+  }
+
+  function parseSharedStrings(xmlText) {
+    var doc = parseXml(xmlText);
+    if (!doc) throw xlsxError("CORRUPT");
+    var items = doc.getElementsByTagName("si");
+    var strings = [];
+    for (var i = 0; i < items.length; i++) strings.push(concatenateTextRuns(items[i]));
+    return strings;
+  }
+
+  // "D4" -> 3, "AA10" -> 26. Column letters can exceed Z.
+  function columnIndexFromRef(ref) {
+    var match = /^([A-Za-z]+)[0-9]+$/.exec(String(ref));
+    if (!match) return -1;
+    var letters = match[1].toUpperCase();
+    var index = 0;
+    for (var i = 0; i < letters.length; i++) index = index * 26 + (letters.charCodeAt(i) - 64);
+    return index - 1;
+  }
+
+  function readCellValue(cell, sharedStrings) {
+    var type = cell.getAttribute("t") || "";
+    var text;
+    if (type === "inlineStr") {
+      var inlineNodes = cell.getElementsByTagName("is");
+      text = inlineNodes.length === 0 ? "" : concatenateTextRuns(inlineNodes[0]);
+      return repairMojibake(text);
+    }
+    var raw = "";
+    var valueNodes = cell.getElementsByTagName("v");
+    if (valueNodes.length > 0) raw = valueNodes[0].textContent || "";
+    if (type === "s") {
+      var index = parseInt(raw, 10);
+      if (!isFinite(index) || index < 0 || index >= sharedStrings.length) return "";
+      return repairMojibake(sharedStrings[index]);
+    }
+    if (type === "b") return raw === "1" ? "TRUE" : "FALSE";
+    // "str" and no-t (numeric) both keep the <v> text as-is.
+    return repairMojibake(raw);
+  }
+
+  // Cells are sparse: place each <c> by its r attribute, never by document order.
+  function parseWorksheetMatrix(xmlText, sharedStrings) {
+    var doc = parseXml(xmlText);
+    if (!doc) throw xlsxError("CORRUPT");
+    var matrix = [];
+    var rowNodes = doc.getElementsByTagName("row");
+    for (var i = 0; i < rowNodes.length; i++) {
+      var rowNode = rowNodes[i];
+      var rowIndex = parseInt(rowNode.getAttribute("r"), 10);
+      if (!isFinite(rowIndex) || rowIndex < 1) rowIndex = i + 1;
+      var cells = [];
+      var cellNodes = rowNode.getElementsByTagName("c");
+      for (var j = 0; j < cellNodes.length; j++) {
+        var cell = cellNodes[j];
+        var column = columnIndexFromRef(cell.getAttribute("r") || "");
+        if (column < 0) column = j;
+        if (column > 16383) throw xlsxError("CORRUPT");
+        cells[column] = readCellValue(cell, sharedStrings);
+      }
+      for (var k = 0; k < cells.length; k++) {
+        if (cells[k] === undefined) cells[k] = "";
+      }
+      matrix[rowIndex - 1] = cells;
+    }
+    for (var r = 0; r < matrix.length; r++) {
+      if (!matrix[r]) matrix[r] = [];
+    }
+    return matrix;
+  }
+
+  // Resolve "worksheets/sheet1.xml" from the workbook relationship when possible;
+  // otherwise fall back to the conventional first-sheet path.
+  function normalizeZipPath(base, target) {
+    if (!target) return "";
+    var joined = target.charAt(0) === "/" ? target.slice(1) : base + target;
+    var parts = joined.split("/");
+    var out = [];
+    for (var i = 0; i < parts.length; i++) {
+      var part = parts[i];
+      if (part === "" || part === ".") continue;
+      if (part === "..") { if (out.length > 0) out.pop(); }
+      else out.push(part);
+    }
+    return out.join("/");
+  }
+
+  async function resolveFirstSheet(entries) {
+    var fallback = { path: "xl/worksheets/sheet1.xml", name: "" };
+    var workbookXml = await readEntryText(entries, "xl/workbook.xml");
+    if (!workbookXml) return fallback;
+    var workbook = parseXml(workbookXml);
+    if (!workbook) return fallback;
+    var sheets = workbook.getElementsByTagName("sheet");
+    if (sheets.length === 0) return fallback;
+    var name = sheets[0].getAttribute("name") || "";
+    var relationshipId = sheets[0].getAttribute("r:id") || "";
+    if (!relationshipId) return { path: fallback.path, name: name };
+    var relsXml = await readEntryText(entries, "xl/_rels/workbook.xml.rels");
+    if (!relsXml) return { path: fallback.path, name: name };
+    var rels = parseXml(relsXml);
+    if (!rels) return { path: fallback.path, name: name };
+    var relationships = rels.getElementsByTagName("Relationship");
+    for (var i = 0; i < relationships.length; i++) {
+      if (relationships[i].getAttribute("Id") !== relationshipId) continue;
+      var target = normalizeZipPath("xl/", relationships[i].getAttribute("Target") || "");
+      if (entries[target]) return { path: target, name: name };
+    }
+    return { path: fallback.path, name: name };
+  }
+
+  // Public entry point: an ArrayBuffer in, a row-major string matrix out.
+  async function readXlsxRows(arrayBuffer) {
+    if (!supportsDeflateRaw()) throw xlsxError("NO_DEFLATE");
+    var bytes = new Uint8Array(arrayBuffer);
+    if (isLegacyXls(bytes)) throw xlsxError("LEGACY_XLS");
+    if (bytes.length < 4 || readUint32LE(bytes, 0) !== ZIP_LOCAL_HEADER) throw xlsxError("CORRUPT");
+    assertNotZip64(bytes);
+
+    var entries = readZipEntries(bytes);
+    var sharedXml = await readEntryText(entries, "xl/sharedStrings.xml");
+    var sharedStrings = sharedXml ? parseSharedStrings(sharedXml) : [];
+
+    var sheet = await resolveFirstSheet(entries);
+    var sheetXml = await readEntryText(entries, sheet.path);
+    if (!sheetXml) throw xlsxError("CORRUPT");
+
+    return { matrix: parseWorksheetMatrix(sheetXml, sharedStrings), sheetName: sheet.name };
   }
 
   // Link a schedule entry to an active cycle unit by accent/case-insensitive name.
@@ -3631,7 +4042,7 @@
       root.appendChild(emptyState(
         "schedule",
         "Todavía no importaste tu horario",
-        "Sube un CSV o pega las filas de tu horario para ver qué horas tienes clases. Puedes descargar una plantilla de ejemplo.",
+        "Sube un archivo CSV, TSV o Excel, o pega las filas de tu horario para ver qué horas tienes clases. Puedes descargar una plantilla de ejemplo.",
         el("button", {
           type: "button", class: "btn btn-primary",
           text: "Descargar plantilla",
@@ -3726,13 +4137,13 @@
 
   function renderScheduleImportCard() {
     var card = el("section", { class: "card" });
-    card.appendChild(el("p", { class: "helper", text: "TaskTec no puede leer archivos .xlsx de Excel (haría falta una librería externa y esta app no usa ninguna). En Excel o Google Sheets usa \"Guardar como\" / \"Descargar\" y elige CSV, o copia las filas y pégalas aquí: lo copiado de la hoja viene separado por tabulaciones y se lee igual." }));
+    card.appendChild(el("p", { class: "helper", text: "Puedes importar tu horario desde un archivo CSV, TSV o Excel (.xlsx / .xlsm), o pegar las filas copiadas de Excel o Google Sheets. El archivo de Excel se lee en tu propio navegador: no se sube a ningún servidor." }));
 
     card.appendChild(el("div", { class: "field" }, [
-      el("label", { for: "scheduleFile", text: "Archivo CSV o TSV" }),
+      el("label", { for: "scheduleFile", text: "Archivo CSV, TSV o Excel" }),
       el("input", {
         class: "input", type: "file", id: "scheduleFile",
-        accept: ".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain",
+        accept: ".csv,.tsv,.txt,.xlsx,.xlsm,text/csv,text/tab-separated-values,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         on: { change: handleScheduleFile }
       })
     ]));
@@ -3768,8 +4179,10 @@
       ]));
     }
 
-    var delimiterName = preview.delimiter === "\t" ? "tabulaciones" : (preview.delimiter === ";" ? "punto y coma" : "comas");
-    box.appendChild(el("p", { class: "helper", text: preview.rows.length + (preview.rows.length === 1 ? " clase lista para importar" : " clases listas para importar") + " · separador detectado: " + delimiterName + "." }));
+    var sourceNote = preview.delimiter === null
+      ? "archivo de Excel" + (preview.sheetName ? " · hoja \"" + preview.sheetName + "\"" : "")
+      : "separador detectado: " + (preview.delimiter === "\t" ? "tabulaciones" : (preview.delimiter === ";" ? "punto y coma" : "comas"));
+    box.appendChild(el("p", { class: "helper", text: preview.rows.length + (preview.rows.length === 1 ? " clase lista para importar" : " clases listas para importar") + " · " + sourceNote + "." }));
 
     if (preview.rows.length > 0) {
       var list = el("ul", { class: "schedule-preview-list" });
@@ -3833,17 +4246,49 @@
     renderSchedule();
   }
 
+  // Excel workbooks are ZIP archives: read the bytes and run the native reader.
+  // Every failure mode is mapped to Spanish copy, never a crash.
+  function handleExcelFile(file, input) {
+    if (!supportsDeflateRaw()) {
+      schedulePreview = null;
+      schedulePreviewSource = "";
+      input.value = "";
+      renderSchedule();
+      window.alert(xlsxErrorMessage("NO_DEFLATE"));
+      return;
+    }
+
+    var reader = new FileReader();
+    reader.onload = function () {
+      readXlsxRows(reader.result).then(function (result) {
+        schedulePreview = scheduleFromMatrix(result.matrix);
+        schedulePreview.delimiter = null;
+        schedulePreview.sheetName = result.sheetName;
+        schedulePreviewSource = "";
+        renderSchedule();
+      }).catch(function (error) {
+        schedulePreview = null;
+        schedulePreviewSource = "";
+        renderSchedule();
+        window.alert(xlsxErrorMessage(error && error.code ? error.code : "CORRUPT"));
+      });
+    };
+    reader.onerror = function () {
+      schedulePreview = null;
+      schedulePreviewSource = "";
+      renderSchedule();
+      window.alert(xlsxErrorMessage("CORRUPT"));
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
   function handleScheduleFile(event) {
     var input = event.target;
     var file = input.files && input.files[0];
     if (!file) return;
 
-    if (/\.xlsx?$/i.test(file.name || "")) {
-      schedulePreview = null;
-      schedulePreviewSource = "";
-      window.alert("TaskTec no puede leer archivos de Excel (.xlsx). Abre tu horario en Excel, usa \"Guardar como\" y elige CSV, o copia las filas y pégalas en el área de texto.");
-      input.value = "";
-      renderSchedule();
+    if (/\.(xlsx|xlsm|xls)$/i.test(file.name || "")) {
+      handleExcelFile(file, input);
       return;
     }
 
