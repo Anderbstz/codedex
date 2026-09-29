@@ -1076,6 +1076,10 @@
   <symbol id="icon-chevron-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="m9 18 6-6-6-6"></path>
   </symbol>
+  <symbol id="icon-arrow-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M19 12H5"></path>
+    <path d="m12 19-7-7 7-7"></path>
+  </symbol>
   <symbol id="icon-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <circle cx="12" cy="12" r="10"></circle>
     <path d="M12 6v6l4 2"></path>
@@ -1166,6 +1170,7 @@
 <div class="modal" id="unitModal" role="dialog" aria-modal="true" aria-labelledby="unitModalTitle">
   <div class="modal-sheet">
     <div class="modal-head">
+      <button class="btn btn-icon" id="unitModalBack" type="button" aria-label="Volver"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-arrow-left"></use></svg></button>
       <div class="modal-head-text">
         <h2 class="modal-title" id="unitModalTitle">Unidad didáctica</h2>
         <p class="modal-sub" id="unitModalSub"></p>
@@ -1180,6 +1185,7 @@
 <div class="modal" id="deadlineModal" role="dialog" aria-modal="true" aria-labelledby="deadlineModalTitle">
   <div class="modal-sheet">
     <div class="modal-head">
+      <button class="btn btn-icon" id="deadlineModalBack" type="button" aria-label="Volver"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-arrow-left"></use></svg></button>
       <div class="modal-head-text">
         <h2 class="modal-title" id="deadlineModalTitle">Nueva entrega</h2>
         <p class="modal-sub">Captura fecha y hora. El 23:59 es el enemigo.</p>
@@ -3864,13 +3870,73 @@
      ========================================================= */
   var lastFocusedElement = null;
 
+  // History integration: an open modal owns exactly one pushed history entry, so
+  // the Android/browser back gesture dismisses the modal instead of leaving the
+  // app. `historyModalLive` is true while that entry is still on the stack.
+  // `historyReleaseTimer` defers the history.back() that removes the entry, which
+  // lets a modal opening in the same tick (unit -> new deadline) reuse the entry
+  // with replaceState instead of stacking a second one. `suppressPopstate`
+  // swallows the popstate our own history.back() fires, so it never closes a
+  // modal twice.
+  var historyModalLive = false;
+  var historyReleaseTimer = null;
+  var suppressPopstate = false;
+
+  function pushModalHistory(modalId) {
+    if (historyModalLive) {
+      // Entry already on the stack (e.g. switching modals): reuse it.
+      if (historyReleaseTimer !== null) {
+        window.clearTimeout(historyReleaseTimer);
+        historyReleaseTimer = null;
+      }
+      try { history.replaceState({ tasktecModal: modalId }, ""); } catch (error) { /* history is optional */ }
+      return;
+    }
+    historyModalLive = true;
+    try {
+      history.pushState({ tasktecModal: modalId }, "");
+    } catch (error) {
+      // Environments that reject pushState (some file:// contexts) simply keep
+      // the modal working without history support.
+      historyModalLive = false;
+    }
+  }
+
+  function releaseModalHistory() {
+    if (!historyModalLive || historyReleaseTimer !== null) return;
+    historyReleaseTimer = window.setTimeout(function () {
+      historyReleaseTimer = null;
+      historyModalLive = false;
+      suppressPopstate = true;
+      history.back();
+    }, 0);
+  }
+
+  function handlePopState() {
+    if (suppressPopstate) {
+      // This is the popstate our own history.back() produced: ignore it.
+      suppressPopstate = false;
+      return;
+    }
+    // The user pressed back while a modal was open: close it without touching
+    // history again, since the entry is already gone.
+    historyModalLive = false;
+    if (historyReleaseTimer !== null) {
+      window.clearTimeout(historyReleaseTimer);
+      historyReleaseTimer = null;
+    }
+    closeOpenModal();
+  }
+
   function openModal(modal) {
     lastFocusedElement = document.activeElement;
     modal.classList.add("open");
     document.body.style.overflow = "hidden";
+    pushModalHistory(modal.id);
   }
 
   function closeModal(modal) {
+    var wasOpen = modal.classList.contains("open");
     modal.classList.remove("open");
     document.body.style.overflow = "";
     if (lastFocusedElement && typeof lastFocusedElement.focus === "function") {
@@ -3878,6 +3944,7 @@
     }
     if (modal.id === "unitModal") activeUnitId = null;
     if (modal.id === "deadlineModal") editingDeadlineId = null;
+    if (wasOpen) releaseModalHistory();
   }
 
   function closeOpenModal() {
@@ -3977,8 +4044,14 @@
       tab.addEventListener("click", function () { switchScreen(tab.dataset.screen); });
     });
 
+    document.getElementById("unitModalBack").addEventListener("click", function () {
+      closeModal(document.getElementById("unitModal"));
+    });
     document.getElementById("unitModalClose").addEventListener("click", function () {
       closeModal(document.getElementById("unitModal"));
+    });
+    document.getElementById("deadlineModalBack").addEventListener("click", function () {
+      closeModal(document.getElementById("deadlineModal"));
     });
     document.getElementById("deadlineModalClose").addEventListener("click", function () {
       closeModal(document.getElementById("deadlineModal"));
@@ -3998,6 +4071,8 @@
         if (closeOpenModal()) event.preventDefault();
       }
     });
+
+    window.addEventListener("popstate", handlePopState);
 
     window.addEventListener("beforeunload", function () {
       if (tickTimer !== null) window.clearInterval(tickTimer);
